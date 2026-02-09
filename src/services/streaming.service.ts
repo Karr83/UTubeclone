@@ -38,6 +38,7 @@
  * - Viewer counts can be spoofed - validate on backend for critical use
  */
 
+/* PHASE 2: Firebase imports commented out
 import {
   collection,
   doc,
@@ -58,8 +59,31 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
+*/
 
-import { db, auth } from '../config/firebase';
+// PHASE 3B: Import real Firebase functions
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
+  onSnapshot,
+  serverTimestamp,
+  increment,
+  Timestamp,
+  Unsubscribe,
+} from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { firestore, auth } from '../config/firebase';
+
 import {
   Stream,
   StreamKey,
@@ -209,7 +233,7 @@ export async function createStream(
     providerResponse = result.data;
   } catch (error) {
     // Fallback to mock data for development
-    console.warn('[StreamingService] Provider call failed, using mock data:', error);
+    console.warn('[StreamingService] Provider call failed:', error);
     providerResponse = {
       streamId: `lp_${streamId}`,
       streamKey: streamKey,
@@ -251,7 +275,7 @@ export async function createStream(
   };
   
   // Save to Firestore
-  const streamRef = doc(db, COLLECTIONS.streams, streamId);
+  const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
   await setDoc(streamRef, {
     ...stream,
     createdAt: serverTimestamp(),
@@ -259,7 +283,7 @@ export async function createStream(
   });
   
   // Also save stream key to secure subcollection
-  const keyRef = doc(db, 'creators', creatorId, COLLECTIONS.streamKeys, 'current');
+  const keyRef = doc(firestore, 'creators', creatorId, COLLECTIONS.streamKeys, 'current');
   await setDoc(keyRef, {
     id: 'current',
     key: providerResponse.streamKey,
@@ -275,7 +299,12 @@ export async function createStream(
  * Get a stream by ID.
  */
 export async function getStream(streamId: string): Promise<Stream | null> {
-  const streamRef = doc(db, COLLECTIONS.streams, streamId);
+  if (!firestore) {
+    console.log('⚠️ Firebase offline, returning null for stream ID:', streamId);
+    return null;
+  }
+
+  const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
   const streamSnap = await getDoc(streamRef);
   
   if (!streamSnap.exists()) {
@@ -290,7 +319,11 @@ export async function getStream(streamId: string): Promise<Stream | null> {
  * Returns the most recent non-ended stream.
  */
 export async function getCreatorCurrentStream(creatorId: string): Promise<Stream | null> {
-  const streamsRef = collection(db, COLLECTIONS.streams);
+  if (!firestore) {
+    return null;
+  }
+  
+  const streamsRef = collection(firestore, COLLECTIONS.streams);
   const q = query(
     streamsRef,
     where('creatorId', '==', creatorId),
@@ -315,7 +348,7 @@ export async function getCreatorCurrentStream(creatorId: string): Promise<Stream
  * SECURITY: Only call this for the authenticated creator.
  */
 export async function getCreatorStreamKey(creatorId: string): Promise<StreamKey | null> {
-  const keyRef = doc(db, 'creators', creatorId, COLLECTIONS.streamKeys, 'current');
+  const keyRef = doc(firestore, 'creators', creatorId, COLLECTIONS.streamKeys, 'current');
   const keySnap = await getDoc(keyRef);
   
   if (!keySnap.exists()) {
@@ -341,7 +374,7 @@ export async function updateStream(
   streamId: string,
   data: UpdateStreamData
 ): Promise<void> {
-  const streamRef = doc(db, COLLECTIONS.streams, streamId);
+  const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
   
   await updateDoc(streamRef, {
     ...data,
@@ -353,7 +386,7 @@ export async function updateStream(
  * Mark stream as live.
  */
 export async function setStreamLive(streamId: string): Promise<void> {
-  const streamRef = doc(db, COLLECTIONS.streams, streamId);
+  const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
   
   await updateDoc(streamRef, {
     status: 'live',
@@ -366,7 +399,7 @@ export async function setStreamLive(streamId: string): Promise<void> {
  * End a stream.
  */
 export async function endStream(streamId: string): Promise<void> {
-  const streamRef = doc(db, COLLECTIONS.streams, streamId);
+  const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
   
   await updateDoc(streamRef, {
     status: 'ended',
@@ -395,7 +428,7 @@ export async function deleteStream(streamId: string): Promise<void> {
   }
   
   // Delete from Firestore
-  const streamRef = doc(db, COLLECTIONS.streams, streamId);
+  const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
   await deleteDoc(streamRef);
 }
 
@@ -407,7 +440,7 @@ export async function deleteStream(streamId: string): Promise<void> {
 export async function regenerateStreamKey(creatorId: string): Promise<string> {
   const newKey = generateStreamKey();
   
-  const keyRef = doc(db, 'creators', creatorId, COLLECTIONS.streamKeys, 'current');
+  const keyRef = doc(firestore, 'creators', creatorId, COLLECTIONS.streamKeys, 'current');
   await setDoc(keyRef, {
     id: 'current',
     key: newKey,
@@ -429,31 +462,29 @@ export async function regenerateStreamKey(creatorId: string): Promise<string> {
 export async function getLiveStreams(
   options: StreamQueryOptions = {}
 ): Promise<StreamListResponse> {
+  if (!firestore) {
+    console.log('⚠️ Firebase offline, returning empty streams list');
+    return { streams: [], hasMore: false };
+  }
+
   const { visibility, limit: queryLimit = 20, startAfter: cursor } = options;
   
+  // Always filter by visibility to avoid permission errors
+  // Default to 'public' if not specified
+  const effectiveVisibility = visibility || 'public';
+  
   let q = query(
-    collection(db, COLLECTIONS.streams),
+    collection(firestore, COLLECTIONS.streams),
     where('status', '==', 'live'),
+    where('visibility', '==', effectiveVisibility),
     where('isSuspended', '==', false),
     orderBy('viewerCount', 'desc'),
     limit(queryLimit)
   );
   
-  // Add visibility filter if specified
-  if (visibility) {
-    q = query(
-      collection(db, COLLECTIONS.streams),
-      where('status', '==', 'live'),
-      where('visibility', '==', visibility),
-      where('isSuspended', '==', false),
-      orderBy('viewerCount', 'desc'),
-      limit(queryLimit)
-    );
-  }
-  
   // Add pagination cursor
   if (cursor) {
-    const cursorDoc = await getDoc(doc(db, COLLECTIONS.streams, cursor));
+    const cursorDoc = await getDoc(doc(firestore, COLLECTIONS.streams, cursor));
     if (cursorDoc.exists()) {
       q = query(q, startAfter(cursorDoc));
     }
@@ -476,10 +507,20 @@ export async function getCreatorStreams(
   creatorId: string,
   options: StreamQueryOptions = {}
 ): Promise<StreamListResponse> {
+  // PHASE 3B: Return empty list if Firebase is not initialized
+  if (!firestore) {
+    console.log('⚠️ Firebase offline, returning empty creator streams list');
+    return {
+      streams: [],
+      hasMore: false,
+      lastId: undefined,
+    };
+  }
+  
   const { status, limit: queryLimit = 20 } = options;
   
   let q = query(
-    collection(db, COLLECTIONS.streams),
+    collection(firestore, COLLECTIONS.streams),
     where('creatorId', '==', creatorId),
     orderBy('createdAt', 'desc'),
     limit(queryLimit)
@@ -489,7 +530,7 @@ export async function getCreatorStreams(
   if (status) {
     const statuses = Array.isArray(status) ? status : [status];
     q = query(
-      collection(db, COLLECTIONS.streams),
+      collection(firestore, COLLECTIONS.streams),
       where('creatorId', '==', creatorId),
       where('status', 'in', statuses),
       orderBy('createdAt', 'desc'),
@@ -521,7 +562,7 @@ export async function joinAsViewer(
   const viewerId = userId || `anon_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   
   // Create viewer session
-  const viewerRef = doc(db, COLLECTIONS.streams, streamId, COLLECTIONS.viewers, viewerId);
+  const viewerRef = doc(firestore, COLLECTIONS.streams, streamId, COLLECTIONS.viewers, viewerId);
   await setDoc(viewerRef, {
     userId: userId || null,
     joinedAt: serverTimestamp(),
@@ -529,7 +570,7 @@ export async function joinAsViewer(
   });
   
   // Increment viewer count
-  const streamRef = doc(db, COLLECTIONS.streams, streamId);
+  const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
   await updateDoc(streamRef, {
     viewerCount: increment(1),
     totalViewers: increment(1),
@@ -546,13 +587,13 @@ export async function leaveAsViewer(
   viewerId: string
 ): Promise<void> {
   // Mark viewer as left
-  const viewerRef = doc(db, COLLECTIONS.streams, streamId, COLLECTIONS.viewers, viewerId);
+  const viewerRef = doc(firestore, COLLECTIONS.streams, streamId, COLLECTIONS.viewers, viewerId);
   await updateDoc(viewerRef, {
     leftAt: serverTimestamp(),
   });
   
   // Decrement viewer count
-  const streamRef = doc(db, COLLECTIONS.streams, streamId);
+  const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
   await updateDoc(streamRef, {
     viewerCount: increment(-1),
   });
@@ -565,7 +606,7 @@ export async function updatePeakViewers(streamId: string): Promise<void> {
   const stream = await getStream(streamId);
   
   if (stream && stream.viewerCount > stream.peakViewerCount) {
-    const streamRef = doc(db, COLLECTIONS.streams, streamId);
+    const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
     await updateDoc(streamRef, {
       peakViewerCount: stream.viewerCount,
     });
@@ -585,7 +626,12 @@ export function subscribeToStream(
   streamId: string,
   callback: (stream: Stream | null) => void
 ): Unsubscribe {
-  const streamRef = doc(db, COLLECTIONS.streams, streamId);
+  if (!firestore) {
+    callback(null);
+    return () => {};
+  }
+  
+  const streamRef = doc(firestore, COLLECTIONS.streams, streamId);
   
   return onSnapshot(streamRef, (snapshot) => {
     if (snapshot.exists()) {
@@ -605,28 +651,38 @@ export function subscribeToLiveStreams(
   callback: (streams: Stream[]) => void,
   visibility?: StreamVisibility
 ): Unsubscribe {
-  let q = query(
-    collection(db, COLLECTIONS.streams),
+  if (!firestore) {
+    console.log('⚠️ Firebase offline, subscribeToLiveStreams returning no-op');
+    callback([]);
+    return () => {};
+  }
+  
+  // Always filter by visibility to avoid permission errors
+  // If visibility is undefined, default to 'public' for unauthenticated users
+  // Note: Callers should pass 'public' or 'membersOnly' explicitly
+  const effectiveVisibility = visibility || 'public';
+  
+  const q = query(
+    collection(firestore, COLLECTIONS.streams),
     where('status', '==', 'live'),
+    where('visibility', '==', effectiveVisibility),
     where('isSuspended', '==', false),
     orderBy('viewerCount', 'desc'),
     limit(50)
   );
   
-  if (visibility) {
-    q = query(
-      collection(db, COLLECTIONS.streams),
-      where('status', '==', 'live'),
-      where('visibility', '==', visibility),
-      where('isSuspended', '==', false),
-      orderBy('viewerCount', 'desc'),
-      limit(50)
-    );
-  }
-  
   return onSnapshot(q, (snapshot) => {
     const streams = snapshot.docs.map((d) => docToStream(d.id, d.data()));
     callback(streams);
+  }, (error) => {
+    // Handle permission errors gracefully
+    if (error?.code === 'permission-denied') {
+      console.warn('⚠️ Permission denied for stream subscription:', error);
+      callback([]);
+    } else {
+      console.error('Error in stream subscription:', error);
+      callback([]);
+    }
   });
 }
 

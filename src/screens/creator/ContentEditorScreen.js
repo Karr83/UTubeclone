@@ -1,12 +1,34 @@
 // ContentEditorScreen - Create/edit content
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, Alert } from 'react-native';
 import { ScreenContainer, Header } from '../../components/layouts';
 import { Text, Button } from '../../components/common';
 import { Input, Select } from '../../components/forms';
 
 const ContentEditorScreen = ({ navigation, route }) => {
   const isEditing = !!route?.params?.id;
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+
+  const handleSave = () => {
+    if (!title.trim()) {
+      Alert.alert('Validation Error', 'Please enter a title for your content.');
+      return;
+    }
+    Alert.alert(
+      'Save Content',
+      isEditing ? 'Content updated successfully!' : 'Content created successfully!',
+      [{ text: 'OK', onPress: () => navigation.goBack() }]
+    );
+  };
+
+  const handleUploadMedia = () => {
+    Alert.alert(
+      'Upload Media',
+      'Media picker will be available soon. You can upload images and videos from your device.',
+      [{ text: 'OK' }]
+    );
+  };
 
   return (
     <ScreenContainer>
@@ -15,22 +37,23 @@ const ContentEditorScreen = ({ navigation, route }) => {
         leftAction="←"
         onLeftPress={() => navigation.goBack()}
         rightAction="Save"
-        onRightPress={() => {
-          // TODO: Save content
-          navigation.goBack();
-        }}
+        onRightPress={handleSave}
       />
       
       <View style={styles.form}>
         <Input
           label="Title"
           placeholder="Enter content title"
+          value={title}
+          onChangeText={setTitle}
         />
         <Input
           label="Description"
           placeholder="Describe your content"
           multiline
           numberOfLines={4}
+          value={description}
+          onChangeText={setDescription}
         />
         <Select
           label="Access Level"
@@ -47,9 +70,7 @@ const ContentEditorScreen = ({ navigation, route }) => {
           <Button
             title="Upload Media"
             variant="secondary"
-            onPress={() => {
-              // TODO: Implement media picker
-            }}
+            onPress={handleUploadMedia}
             style={styles.uploadButton}
           />
         </View>

@@ -2,41 +2,26 @@
  * Content Feed Screen
  * 
  * Displays a feed of uploaded content from creators.
- * This screen demonstrates:
+ * Uses the unified VideoCard component for consistent UI.
+ * 
+ * FEATURES:
  * - Fetching and displaying content from Firestore
  * - Filtering between public and members-only content
  * - Infinite scroll pagination
- * - Basic content card display
  * - BOOSTED CONTENT PRIORITIZATION
  * 
  * ACCESS CONTROL:
  * - Public content: Available to everyone
  * - Members-only content: Requires authentication
- * 
- * BOOST SORTING:
- * - Boosted content appears first in the feed
- * - Higher boost levels appear before lower levels
- * - Non-boosted content sorted by date
- * 
- * USAGE:
- * - Can be used as main home feed
- * - Can be filtered to show specific creator's content
- * - Can be embedded in tabs or as standalone screen
- * 
- * FUTURE ENHANCEMENTS:
- * - Content categories/filters
- * - Search functionality
- * - Grid/list view toggle
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  Image,
   RefreshControl,
   ActivityIndicator,
   ScrollView,
@@ -47,6 +32,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { contentService } from '../../services/content.service';
 import { boostService } from '../../services/boost.service';
 import { Content, ContentListResponse } from '../../types/content';
+import { VideoCard } from '../../components/video';
+import { TopMenuIcon } from '../../components/navigation';
+import { NavigationIcon } from '../../components/icons/navigation';
+import { darkTheme } from '../../theme';
 
 // =============================================================================
 // TYPES
@@ -60,132 +49,23 @@ interface ContentFeedScreenProps {
 }
 
 // =============================================================================
-// CONTENT CARD COMPONENT
-// =============================================================================
-
-interface ContentCardProps {
-  content: Content;
-  onPress: (content: Content) => void;
-  onPressCreator: (creatorId: string) => void;
-}
-
-function ContentCard({ content, onPress, onPressCreator }: ContentCardProps): JSX.Element {
-  // UI-only: we don't have creator profile data on the Content model yet, so we
-  // render a simple avatar placeholder from creatorId.
-  const avatarLetter = useMemo(() => {
-    return (content.creatorId?.[0] || '?').toUpperCase();
-  }, [content.creatorId]);
-
-  return (
-    <View style={styles.ytCard}>
-      {/* Thumbnail */}
-      <TouchableOpacity activeOpacity={0.85} onPress={() => onPress(content)}>
-        <View style={styles.ytThumbWrap}>
-          {content.thumbnailUrl || content.mediaUrl ? (
-            <Image
-              source={{ uri: content.thumbnailUrl || content.mediaUrl }}
-              style={styles.ytThumb}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.ytThumbFallback}>
-              <Text style={styles.ytThumbEmoji}>
-                {content.mediaType === 'video' ? '🎬' : '📷'}
-              </Text>
-            </View>
-          )}
-
-          {/* Media Type Badge */}
-          <View style={styles.ytMediaTypeBadge}>
-            <Text style={styles.ytMediaTypeText}>
-              {content.mediaType === 'video' ? '▶️' : '📷'}
-            </Text>
-          </View>
-
-          {/* Visibility Badge */}
-          {content.visibility === 'membersOnly' && (
-            <View style={styles.ytBadgeTopRight}>
-              <Text style={styles.ytBadgeText}>🔒 Members</Text>
-            </View>
-          )}
-
-          {/* Boosted Badge */}
-          {content.isBoosted && (
-            <View style={styles.ytBadgeBottomLeft}>
-              <Text style={styles.ytBadgeText}>
-                🚀 {content.boostLevel >= 4 ? 'Featured' : 'Boosted'}
-              </Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-
-      {/* Meta row */}
-      <View style={styles.ytMetaRow}>
-        <TouchableOpacity
-          style={styles.ytAvatar}
-          onPress={() => onPressCreator(content.creatorId)}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.ytAvatarText}>{avatarLetter}</Text>
-        </TouchableOpacity>
-
-        <View style={styles.ytTextCol}>
-          <Text style={styles.ytTitle} numberOfLines={2}>
-            {content.title}
-          </Text>
-          <Text style={styles.ytSub} numberOfLines={1}>
-            {content.creatorId.slice(0, 8)} • {formatCount(content.viewCount)} views •{' '}
-            {formatDate(content.createdAt)}
-          </Text>
-        </View>
-
-        <View style={styles.ytKebab}>
-          <Text style={styles.ytKebabText}>⋮</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
 /**
- * Format large numbers with K/M suffix.
+ * Format duration in seconds to mm:ss or hh:mm:ss.
  */
-function formatCount(count: number): string {
-  if (count >= 1000000) {
-    return `${(count / 1000000).toFixed(1)}M`;
-  }
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`;
-  }
-  return count.toString();
-}
-
-/**
- * Format date to relative time string.
- */
-function formatDate(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+function formatDuration(seconds?: number): string | undefined {
+  if (!seconds) return undefined;
   
-  if (diffDays === 0) {
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    if (diffHours === 0) {
-      const diffMins = Math.floor(diffMs / (1000 * 60));
-      return diffMins <= 1 ? 'Just now' : `${diffMins}m ago`;
-    }
-    return `${diffHours}h ago`;
-  }
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays}d ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
   
-  return date.toLocaleDateString();
+  if (hrs > 0) {
+    return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 // =============================================================================
@@ -202,6 +82,110 @@ export default function ContentFeedScreen({
   // ---------------------------------------------------------------------------
   // STATE
   // ---------------------------------------------------------------------------
+
+  // Mock data for demo (when Firebase is offline)
+  const MOCK_CONTENT: Content[] = [
+    {
+      id: 'mock-1',
+      title: 'Amazing React Native Tutorial - Building Beautiful UIs',
+      description: 'Learn how to build stunning mobile apps with React Native and Expo',
+      creatorId: 'creator-1',
+      creatorName: 'Tech Guru',
+      mediaUrl: 'https://via.placeholder.com/1280x720/FF0000/FFFFFF?text=Video+1',
+      thumbnailUrl: 'https://via.placeholder.com/1280x720/FF0000/FFFFFF?text=Video+1',
+      mediaType: 'video',
+      visibility: 'public',
+      status: 'published',
+      viewCount: 125000,
+      likeCount: 8500,
+      commentCount: 320,
+      durationSeconds: 1245,
+      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+      isBoosted: false,
+      boostLevel: 0,
+    },
+    {
+      id: 'mock-2',
+      title: 'Mastering TypeScript in 2024 - Complete Guide',
+      description: 'Everything you need to know about TypeScript for modern development',
+      creatorId: 'creator-2',
+      creatorName: 'Code Master',
+      mediaUrl: 'https://via.placeholder.com/1280x720/0066FF/FFFFFF?text=Video+2',
+      thumbnailUrl: 'https://via.placeholder.com/1280x720/0066FF/FFFFFF?text=Video+2',
+      mediaType: 'video',
+      visibility: 'public',
+      status: 'published',
+      viewCount: 89000,
+      likeCount: 6200,
+      commentCount: 245,
+      durationSeconds: 1820,
+      createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+      isBoosted: true,
+      boostLevel: 2,
+    },
+    {
+      id: 'mock-3',
+      title: 'Firebase Authentication Deep Dive',
+      description: 'Learn how to implement secure authentication in your apps',
+      creatorId: 'creator-3',
+      creatorName: 'Dev Expert',
+      mediaUrl: 'https://via.placeholder.com/1280x720/00AA00/FFFFFF?text=Video+3',
+      thumbnailUrl: 'https://via.placeholder.com/1280x720/00AA00/FFFFFF?text=Video+3',
+      mediaType: 'video',
+      visibility: 'members',
+      status: 'published',
+      viewCount: 45000,
+      likeCount: 3100,
+      commentCount: 180,
+      durationSeconds: 960,
+      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+      isBoosted: false,
+      boostLevel: 0,
+    },
+    {
+      id: 'mock-4',
+      title: 'Building a YouTube Clone - Full Stack Tutorial',
+      description: 'Create a complete video streaming platform from scratch',
+      creatorId: 'creator-1',
+      creatorName: 'Tech Guru',
+      mediaUrl: 'https://via.placeholder.com/1280x720/FF6600/FFFFFF?text=Video+4',
+      thumbnailUrl: 'https://via.placeholder.com/1280x720/FF6600/FFFFFF?text=Video+4',
+      mediaType: 'video',
+      visibility: 'public',
+      status: 'published',
+      viewCount: 210000,
+      likeCount: 15200,
+      commentCount: 890,
+      durationSeconds: 2100,
+      createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+      isBoosted: true,
+      boostLevel: 3,
+    },
+    {
+      id: 'mock-5',
+      title: 'React Native Performance Optimization Tips',
+      description: 'Make your React Native apps faster and smoother',
+      creatorId: 'creator-2',
+      creatorName: 'Code Master',
+      mediaUrl: 'https://via.placeholder.com/1280x720/9900FF/FFFFFF?text=Video+5',
+      thumbnailUrl: 'https://via.placeholder.com/1280x720/9900FF/FFFFFF?text=Video+5',
+      mediaType: 'video',
+      visibility: 'public',
+      status: 'published',
+      viewCount: 67000,
+      likeCount: 4800,
+      commentCount: 210,
+      durationSeconds: 1450,
+      createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+      isBoosted: false,
+      boostLevel: 0,
+    },
+  ];
 
   const [content, setContent] = useState<Content[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -220,21 +204,6 @@ export default function ContentFeedScreen({
   // FETCH CONTENT
   // ---------------------------------------------------------------------------
 
-  /**
-   * Fetch content based on current filters.
-   */
-  /**
-   * Fetch content with boosted content prioritization.
-   * 
-   * BOOST SORTING LOGIC:
-   * - For main feed (all/public tabs): Use getFeedWithBoostedFirst()
-   * - Boosted content appears first, sorted by boost level (highest first)
-   * - Non-boosted content follows, sorted by createdAt
-   * 
-   * FUTURE PAYMENT INTEGRATION:
-   * - Paid boosts will have higher levels (3-5)
-   * - Featured content (admin boosted) will always appear first
-   */
   const fetchContent = useCallback(
     async (refresh = false) => {
       if (refresh) {
@@ -245,27 +214,22 @@ export default function ContentFeedScreen({
         let response: ContentListResponse;
 
         if (creatorId) {
-          // Fetch specific creator's content (no boost prioritization needed)
           response = await contentService.getCreatorContent(creatorId, {
             status: 'published',
             limit: 20,
             startAfter: refresh ? undefined : lastId,
           });
         } else if (activeTab === 'public' || activeTab === 'all') {
-          // USE BOOSTED CONTENT FIRST for main feed
-          // This shows boosted content at the top, then regular content by date
           response = await boostService.getFeedWithBoostedFirst(
             20,
             refresh ? undefined : lastId
           );
         } else if (activeTab === 'members' && user) {
-          // Fetch members-only content
           response = await contentService.getMembersOnlyContent({
             limit: 20,
             startAfter: refresh ? undefined : lastId,
           });
         } else {
-          // Fallback: Fetch public content with boost prioritization
           response = await boostService.getFeedWithBoostedFirst(
             20,
             refresh ? undefined : lastId
@@ -282,7 +246,17 @@ export default function ContentFeedScreen({
         setLastId(response.lastId);
         setError(null);
       } catch (err: any) {
-        setError(err.message || 'Failed to load content');
+        // Handle permission errors vs actual errors
+        if (err?.code === 'permission-denied' || err?.message?.includes('permissions')) {
+          console.warn('⚠️ Firestore permissions not configured. Please set up security rules.');
+          setContent([]); // Show empty state
+          setError('Permissions not configured. Please set up Firestore security rules.');
+        } else {
+          console.error('Error loading content:', err);
+          setContent([]); // Show empty state on error
+          setError('Failed to load content. Please try again.');
+        }
+        setHasMore(false);
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
@@ -304,17 +278,11 @@ export default function ContentFeedScreen({
   // HANDLERS
   // ---------------------------------------------------------------------------
 
-  /**
-   * Pull-to-refresh handler.
-   */
   const handleRefresh = () => {
     setLastId(undefined);
     fetchContent(true);
   };
 
-  /**
-   * Load more content when reaching end of list.
-   */
   const handleLoadMore = () => {
     if (!isLoadingMore && hasMore && !isLoading) {
       setIsLoadingMore(true);
@@ -322,20 +290,12 @@ export default function ContentFeedScreen({
     }
   };
 
-  /**
-   * Handle content card press.
-   */
   const handleContentPress = (item: Content) => {
-    // Increment view count
     contentService.incrementViewCount(item.id);
-
-    // UI-only navigation: opens the placeholder ContentDetail screen.
-    // This will later be replaced with the real “watch/content” screen from Figma.
     navigation.navigate('ContentDetail', { id: item.id });
   };
 
   const handleCreatorPress = (id: string) => {
-    // UI-only navigation: opens placeholder creator profile screen.
     navigation.navigate('CreatorProfile', { id });
   };
 
@@ -368,7 +328,7 @@ export default function ContentFeedScreen({
   if (isLoading && content.length === 0) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6366F1" />
+        <ActivityIndicator size="large" color={darkTheme.youtube.red} />
         <Text style={styles.loadingText}>Loading content...</Text>
       </View>
     );
@@ -383,15 +343,21 @@ export default function ContentFeedScreen({
       {/* Top App Bar */}
       <View style={styles.topBar}>
         <Text style={styles.brand}>
-          {creatorId ? 'Creator' : 'MS GIFT'}
+          {creatorId ? 'Creator' : 'VibeTube'}
         </Text>
         <View style={styles.topBarActions}>
-          <Text style={styles.topBarIcon}>🔍</Text>
-          <Text style={styles.topBarIcon}>🔔</Text>
+          <TopMenuIcon
+            icon={<NavigationIcon name="search" size={24} />}
+            onPress={() => console.log('Search pressed')}
+          />
+          <TopMenuIcon
+            icon={<NavigationIcon name="notifications" size={24} />}
+            onPress={() => console.log('Notifications pressed')}
+          />
         </View>
       </View>
 
-      {/* Category chips (maps to existing filter tabs; UI-only) */}
+      {/* Category chips */}
       {showTabs && (
         <View style={styles.chipsWrap}>
           <ScrollView
@@ -446,10 +412,22 @@ export default function ContentFeedScreen({
         data={content}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <ContentCard
-            content={item}
-            onPress={handleContentPress}
-            onPressCreator={handleCreatorPress}
+          <VideoCard
+            variant="feed"
+            id={item.id}
+            title={item.title}
+            thumbnailUrl={item.thumbnailUrl || item.mediaUrl}
+            duration={formatDuration(item.durationSeconds)}
+            creatorId={item.creatorId}
+            creatorName={item.creatorName}
+            viewCount={item.viewCount}
+            timestamp={item.createdAt}
+            isMembersOnly={item.visibility === 'members'}
+            isBoosted={item.isBoosted}
+            boostLevel={item.boostLevel}
+            mediaType={item.mediaType}
+            onPress={() => handleContentPress(item)}
+            onCreatorPress={() => handleCreatorPress(item.creatorId)}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -457,7 +435,7 @@ export default function ContentFeedScreen({
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            tintColor="#6366F1"
+            tintColor={darkTheme.youtube.red}
           />
         }
         onEndReached={handleLoadMore}
@@ -466,7 +444,7 @@ export default function ContentFeedScreen({
         ListFooterComponent={
           isLoadingMore ? (
             <View style={styles.loadingMore}>
-              <ActivityIndicator size="small" color="#6366F1" />
+              <ActivityIndicator size="small" color={darkTheme.youtube.red} />
             </View>
           ) : null
         }
@@ -482,19 +460,19 @@ export default function ContentFeedScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0B0B',
+    backgroundColor: darkTheme.semantic.background,
   },
   topBar: {
     paddingTop: 56,
     paddingHorizontal: 16,
     paddingBottom: 10,
-    backgroundColor: '#0B0B0B',
+    backgroundColor: darkTheme.semantic.background,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   brand: {
-    color: '#FFFFFF',
+    color: darkTheme.semantic.text,
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -504,13 +482,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   topBarIcon: {
-    color: '#FFFFFF',
+    color: darkTheme.semantic.text,
     fontSize: 18,
   },
 
-  // Chips (maps to existing tabs)
+  // Chips
   chipsWrap: {
-    backgroundColor: '#0B0B0B',
+    backgroundColor: darkTheme.semantic.background,
     paddingBottom: 8,
   },
   chipsContent: {
@@ -521,18 +499,18 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: '#1F2937',
+    backgroundColor: darkTheme.youtube.chipBackground,
   },
   chipActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: darkTheme.youtube.chipActive,
   },
   chipText: {
-    color: '#E5E7EB',
+    color: darkTheme.semantic.text,
     fontSize: 13,
     fontWeight: '600',
   },
   chipTextActive: {
-    color: '#111827',
+    color: darkTheme.youtube.chipActiveText,
   },
 
   // List
@@ -540,117 +518,17 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
 
-  // YouTube-style card
-  ytCard: {
-    marginBottom: 16,
-  },
-  ytThumbWrap: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    backgroundColor: '#111827',
-    position: 'relative',
-  },
-  ytThumb: {
-    width: '100%',
-    height: '100%',
-  },
-  ytThumbFallback: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ytThumbEmoji: {
-    fontSize: 40,
-  },
-  ytMediaTypeBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  ytMediaTypeText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-  },
-  ytBadgeTopRight: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  ytBadgeBottomLeft: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  ytBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  ytMetaRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  ytAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#374151',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ytAvatarText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  ytTextCol: {
-    flex: 1,
-  },
-  ytTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  ytSub: {
-    color: '#9CA3AF',
-    fontSize: 12,
-  },
-  ytKebab: {
-    width: 24,
-    alignItems: 'flex-end',
-    paddingTop: 2,
-  },
-  ytKebabText: {
-    color: '#9CA3AF',
-    fontSize: 18,
-    lineHeight: 18,
-  },
-
   // Loading
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0B0B0B',
+    backgroundColor: darkTheme.semantic.background,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#9CA3AF',
+    color: darkTheme.semantic.textSecondary,
   },
   loadingMore: {
     padding: 16,
@@ -672,18 +550,18 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: darkTheme.semantic.text,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 16,
-    color: '#9CA3AF',
+    color: darkTheme.semantic.textSecondary,
     textAlign: 'center',
   },
 
   // Error
   errorBox: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: 'rgba(239,68,68,0.15)',
     padding: 16,
     marginHorizontal: 16,
     marginTop: 8,
@@ -691,15 +569,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: '#DC2626',
+    color: '#EF4444',
     fontSize: 14,
     textAlign: 'center',
   },
   retryText: {
-    color: '#111827',
+    color: darkTheme.semantic.text,
     fontSize: 14,
     marginTop: 8,
     textDecorationLine: 'underline',
   },
 });
-

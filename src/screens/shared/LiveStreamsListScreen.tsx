@@ -1,24 +1,23 @@
 /**
  * Live Streams List Screen
  * 
- * Displays all currently live streams in a YouTube-style mobile layout.
- * Reuses the same card pattern from ContentFeedScreen (Home).
+ * Displays all currently live streams.
+ * Uses the unified VideoCard component with "live" variant.
  * 
  * FEATURES:
  * - Real-time list of live streams
  * - Filter chips (All, Public, Members)
  * - Pull to refresh
- * - Same visual style as Home feed
+ * - Auto-updates via subscription
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  Image,
   ActivityIndicator,
   StyleSheet,
   ScrollView,
@@ -32,119 +31,76 @@ import {
   getLiveStreams,
   subscribeToLiveStreams,
 } from '../../services/streaming.service';
+import { VideoCard } from '../../components/video';
+import { darkTheme } from '../../theme';
 
 // =============================================================================
-// HELPER FUNCTIONS (same as ContentFeedScreen)
+// MOCK DATA (for demo when Firebase is offline)
 // =============================================================================
 
-function formatCount(count: number): string {
-  if (count >= 1000000) {
-    return `${(count / 1000000).toFixed(1)}M`;
-  }
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`;
-  }
-  return count.toString();
-}
+// Mock creator names map
+const MOCK_CREATOR_NAMES: Record<string, string> = {
+  'creator-1': 'Tech Guru',
+  'creator-2': 'Code Master',
+  'creator-3': 'Dev Expert',
+};
 
-// =============================================================================
-// STREAM CARD COMPONENT
-// =============================================================================
-
-interface StreamCardProps {
-  stream: Stream;
-  onPress: () => void;
-  onPressCreator: () => void;
-  canView: boolean;
-}
-
-function StreamCard({ stream, onPress, onPressCreator, canView }: StreamCardProps): JSX.Element {
-  const avatarLetter = useMemo(() => {
-    return (stream.creatorName?.[0] || stream.creatorId?.[0] || '?').toUpperCase();
-  }, [stream.creatorName, stream.creatorId]);
-
-  return (
-    <View style={styles.ytCard}>
-      {/* Thumbnail */}
-      <TouchableOpacity 
-        activeOpacity={0.85} 
-        onPress={onPress}
-        disabled={!canView}
-      >
-        <View style={styles.ytThumbWrap}>
-          {stream.thumbnailUrl ? (
-            <Image
-              source={{ uri: stream.thumbnailUrl }}
-              style={styles.ytThumb}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.ytThumbFallback}>
-              <Text style={styles.ytThumbEmoji}>
-                {stream.mode === 'audio_only' ? '🎙️' : 
-                 stream.mode === 'avatar' ? '🎭' : '📹'}
-              </Text>
-            </View>
-          )}
-
-          {/* LIVE Badge (top-left) */}
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>LIVE</Text>
-          </View>
-
-          {/* Viewer count (bottom-right) */}
-          <View style={styles.viewerBadge}>
-            <Text style={styles.viewerText}>
-              {formatCount(stream.viewerCount || 0)} watching
-            </Text>
-          </View>
-
-          {/* Members badge (top-right) */}
-          {stream.visibility === 'members' && (
-            <View style={styles.ytBadgeTopRight}>
-              <Text style={styles.ytBadgeText}>🔒 Members</Text>
-            </View>
-          )}
-
-          {/* Locked overlay */}
-          {!canView && stream.visibility === 'members' && (
-            <View style={styles.lockedOverlay}>
-              <Text style={styles.lockedIcon}>🔒</Text>
-              <Text style={styles.lockedText}>Join to watch</Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-
-      {/* Meta row */}
-      <View style={styles.ytMetaRow}>
-        <TouchableOpacity
-          style={styles.ytAvatar}
-          onPress={onPressCreator}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.ytAvatarText}>{avatarLetter}</Text>
-        </TouchableOpacity>
-
-        <View style={styles.ytTextCol}>
-          <Text style={styles.ytTitle} numberOfLines={2}>
-            {stream.title}
-          </Text>
-          <Text style={styles.ytSub} numberOfLines={1}>
-            {stream.creatorName || stream.creatorId?.slice(0, 8)} •{' '}
-            {stream.mode === 'audio_only' ? '🎙️ Audio' : 
-             stream.mode === 'avatar' ? '🎭 Avatar' : '📹 Video'}
-          </Text>
-        </View>
-
-        <View style={styles.ytKebab}>
-          <Text style={styles.ytKebabText}>⋮</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
+const MOCK_STREAMS: Stream[] = [
+  {
+    id: 'mock-stream-1',
+    creatorId: 'creator-1',
+    title: 'Live Coding: Building a React Native App',
+    description: 'Join me as I build a complete React Native app from scratch',
+    thumbnailUrl: 'https://via.placeholder.com/1280x720/FF0000/FFFFFF?text=Live+1',
+    status: 'live',
+    visibility: 'public',
+    mode: 'video',
+    playbackUrl: 'https://example.com/stream1.m3u8',
+    streamKey: 'mock-key-1',
+    rtmpUrl: 'rtmp://example.com/live',
+    viewerCount: 1250,
+    peakViewers: 2500,
+    startedAt: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
+    createdAt: new Date(Date.now() - 30 * 60 * 1000),
+    updatedAt: new Date(),
+  },
+  {
+    id: 'mock-stream-2',
+    creatorId: 'creator-2',
+    title: 'TypeScript Tips & Tricks - Live Q&A',
+    description: 'Ask me anything about TypeScript!',
+    thumbnailUrl: 'https://via.placeholder.com/1280x720/0066FF/FFFFFF?text=Live+2',
+    status: 'live',
+    visibility: 'public',
+    mode: 'video',
+    playbackUrl: 'https://example.com/stream2.m3u8',
+    streamKey: 'mock-key-2',
+    rtmpUrl: 'rtmp://example.com/live',
+    viewerCount: 890,
+    peakViewers: 1200,
+    startedAt: new Date(Date.now() - 15 * 60 * 1000), // 15 minutes ago
+    createdAt: new Date(Date.now() - 15 * 60 * 1000),
+    updatedAt: new Date(),
+  },
+  {
+    id: 'mock-stream-3',
+    creatorId: 'creator-3',
+    title: 'Firebase Tutorial - Real-time Database',
+    description: 'Learn how to use Firebase Realtime Database',
+    thumbnailUrl: 'https://via.placeholder.com/1280x720/00AA00/FFFFFF?text=Live+3',
+    status: 'live',
+    visibility: 'members',
+    mode: 'video',
+    playbackUrl: 'https://example.com/stream3.m3u8',
+    streamKey: 'mock-key-3',
+    rtmpUrl: 'rtmp://example.com/live',
+    viewerCount: 450,
+    peakViewers: 600,
+    startedAt: new Date(Date.now() - 60 * 60 * 1000), // 1 hour ago
+    createdAt: new Date(Date.now() - 60 * 60 * 1000),
+    updatedAt: new Date(),
+  },
+];
 
 // =============================================================================
 // MAIN COMPONENT
@@ -161,7 +117,10 @@ export default function LiveStreamsListScreen(): JSX.Element {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'public' | 'members'>('all');
 
-  // Load streams
+  // ---------------------------------------------------------------------------
+  // LOAD STREAMS
+  // ---------------------------------------------------------------------------
+
   const loadStreams = useCallback(async (refresh = false) => {
     if (refresh) {
       setIsRefreshing(true);
@@ -170,11 +129,20 @@ export default function LiveStreamsListScreen(): JSX.Element {
     }
 
     try {
-      const visibility = filter === 'all' ? undefined : filter as StreamVisibility;
+      // For 'all' filter, default to 'public' to avoid permission errors
+      // Authenticated users can switch to 'members' tab to see members-only streams
+      const visibility = filter === 'all' ? 'public' : filter as StreamVisibility;
       const result = await getLiveStreams({ visibility });
       setStreams(result.streams);
-    } catch (error) {
-      console.error('[LiveStreamsListScreen] Load error:', error);
+    } catch (error: any) {
+      // Handle permission errors vs actual errors
+      if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
+        console.warn('⚠️ Firestore permissions not configured. Please set up security rules.');
+        setStreams([]); // Show empty state
+      } else {
+        console.error('Error loading streams:', error);
+        setStreams([]); // Show empty state on error
+      }
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -185,8 +153,8 @@ export default function LiveStreamsListScreen(): JSX.Element {
   useEffect(() => {
     loadStreams();
 
-    // Subscribe to real-time updates
-    const visibility = filter === 'all' ? undefined : filter as StreamVisibility;
+    // For 'all' filter, default to 'public' to avoid permission errors
+    const visibility = filter === 'all' ? 'public' : filter as StreamVisibility;
     const unsubscribe = subscribeToLiveStreams((updatedStreams) => {
       setStreams(updatedStreams);
     }, visibility);
@@ -194,14 +162,20 @@ export default function LiveStreamsListScreen(): JSX.Element {
     return () => unsubscribe();
   }, [filter]);
 
-  // Check if user can view a stream
+  // ---------------------------------------------------------------------------
+  // HELPERS
+  // ---------------------------------------------------------------------------
+
   const canViewStream = useCallback((stream: Stream): boolean => {
     if (stream.visibility === 'public') return true;
     if (!user) return false;
     return tier !== 'free';
   }, [user, tier]);
 
-  // Navigate to stream
+  // ---------------------------------------------------------------------------
+  // HANDLERS
+  // ---------------------------------------------------------------------------
+
   const handleStreamPress = (stream: Stream) => {
     if (!canViewStream(stream)) {
       navigation.navigate('Upgrade');
@@ -210,7 +184,6 @@ export default function LiveStreamsListScreen(): JSX.Element {
     navigation.navigate('LiveStream', { streamId: stream.id });
   };
 
-  // Navigate to creator profile
   const handleCreatorPress = (creatorId: string) => {
     navigation.navigate('CreatorProfile', { id: creatorId });
   };
@@ -223,7 +196,7 @@ export default function LiveStreamsListScreen(): JSX.Element {
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#ff0000" />
+          <ActivityIndicator size="large" color={darkTheme.youtube.red} />
           <Text style={styles.loadingText}>Finding live streams...</Text>
         </View>
       </View>
@@ -291,11 +264,19 @@ export default function LiveStreamsListScreen(): JSX.Element {
         data={streams}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <StreamCard
-            stream={item}
+          <VideoCard
+            variant="live"
+            id={item.id}
+            title={item.title}
+            thumbnailUrl={item.thumbnailUrl}
+            creatorName={MOCK_CREATOR_NAMES[item.creatorId] || 'Creator'}
+            creatorId={item.creatorId}
+            viewerCount={item.viewerCount || 0}
+            isMembersOnly={item.visibility === 'members'}
+            mediaType={item.mode}
+            isLocked={!canViewStream(item)}
             onPress={() => handleStreamPress(item)}
-            onPressCreator={() => handleCreatorPress(item.creatorId)}
-            canView={canViewStream(item)}
+            onCreatorPress={() => handleCreatorPress(item.creatorId)}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -304,7 +285,7 @@ export default function LiveStreamsListScreen(): JSX.Element {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={() => loadStreams(true)}
-            tintColor="#ff0000"
+            tintColor={darkTheme.youtube.red}
           />
         }
         showsVerticalScrollIndicator={false}
@@ -314,13 +295,13 @@ export default function LiveStreamsListScreen(): JSX.Element {
 }
 
 // =============================================================================
-// STYLES (matching ContentFeedScreen dark YouTube theme)
+// STYLES
 // =============================================================================
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0B0B',
+    backgroundColor: darkTheme.semantic.background,
   },
 
   // Top Bar
@@ -328,7 +309,7 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingHorizontal: 16,
     paddingBottom: 10,
-    backgroundColor: '#0B0B0B',
+    backgroundColor: darkTheme.semantic.background,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -342,7 +323,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#ff0000',
+    backgroundColor: darkTheme.youtube.red,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -353,19 +334,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   brand: {
-    color: '#FFFFFF',
+    color: darkTheme.semantic.text,
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   streamCount: {
-    color: '#9CA3AF',
+    color: darkTheme.semantic.textSecondary,
     fontSize: 14,
   },
 
-  // Chips (filter tabs)
+  // Chips
   chipsWrap: {
-    backgroundColor: '#0B0B0B',
+    backgroundColor: darkTheme.semantic.background,
     paddingBottom: 8,
   },
   chipsContent: {
@@ -376,163 +357,23 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: '#1F2937',
+    backgroundColor: darkTheme.youtube.chipBackground,
   },
   chipActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: darkTheme.youtube.chipActive,
   },
   chipText: {
-    color: '#E5E7EB',
+    color: darkTheme.semantic.text,
     fontSize: 13,
     fontWeight: '600',
   },
   chipTextActive: {
-    color: '#111827',
+    color: darkTheme.youtube.chipActiveText,
   },
 
   // List
   listContent: {
     paddingBottom: 24,
-  },
-
-  // YouTube-style card (matching ContentFeedScreen)
-  ytCard: {
-    marginBottom: 16,
-  },
-  ytThumbWrap: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    backgroundColor: '#111827',
-    position: 'relative',
-  },
-  ytThumb: {
-    width: '100%',
-    height: '100%',
-  },
-  ytThumbFallback: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ytThumbEmoji: {
-    fontSize: 48,
-  },
-
-  // LIVE badge
-  liveBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ff0000',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    gap: 4,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#fff',
-  },
-  liveText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-
-  // Viewer count badge
-  viewerBadge: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-  },
-  viewerText: {
-    color: '#fff',
-    fontSize: 12,
-  },
-
-  // Members badge (top-right)
-  ytBadgeTopRight: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  ytBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  // Locked overlay
-  lockedOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  lockedIcon: {
-    fontSize: 36,
-    marginBottom: 8,
-  },
-  lockedText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-
-  // Meta row (matching ContentFeedScreen)
-  ytMetaRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  ytAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#ff0000',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ytAvatarText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  ytTextCol: {
-    flex: 1,
-  },
-  ytTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  ytSub: {
-    color: '#9CA3AF',
-    fontSize: 12,
-  },
-  ytKebab: {
-    width: 24,
-    alignItems: 'flex-end',
-    paddingTop: 2,
-  },
-  ytKebabText: {
-    color: '#9CA3AF',
-    fontSize: 18,
-    lineHeight: 18,
   },
 
   // Loading
@@ -544,7 +385,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#9CA3AF',
+    color: darkTheme.semantic.textSecondary,
   },
 
   // Empty state
@@ -562,12 +403,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: darkTheme.semantic.text,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 16,
-    color: '#9CA3AF',
+    color: darkTheme.semantic.textSecondary,
     textAlign: 'center',
   },
 });

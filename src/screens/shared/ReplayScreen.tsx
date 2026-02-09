@@ -19,15 +19,17 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Dimensions,
   ScrollView,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 
 import { useReplayViewer } from '../../hooks/useReplayViewer';
 import { formatDuration } from '../../services/recording.service';
+import { CommentItem } from '../../components/comment';
+import { VideoDescription, VideoPlayer, VideoPageIconsDropdown, VideoPageMoreIcon, VideoPageSaveIcon, VideoPageShareIcon, VideoPageDislikeIcon, VideoPageLikeIcon, createVideoMenuItems } from '../../components/video';
 
 // =============================================================================
 // TYPES
@@ -39,141 +41,43 @@ type ReplayRouteParams = {
   };
 };
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const VIDEO_HEIGHT = SCREEN_WIDTH * (9 / 16); // 16:9 aspect ratio
-
 // =============================================================================
-// VIDEO PLAYER COMPONENT
+// MOCK COMMENTS DATA (UI Only)
 // =============================================================================
 
-interface VideoPlayerProps {
-  playbackUrl: string;
-  duration: number;
-  onProgress?: (seconds: number) => void;
-  onComplete?: () => void;
-}
+const MOCK_COMMENTS = [
+  {
+    id: '1',
+    username: 'James Gouse',
+    avatarUrl: undefined,
+    userRole: 'viewer' as const,
+    text: 'Wow, world is full of different skills',
+    timestamp: '8 hours ago',
+    likeCount: 3,
+    replyCount: 0,
+  },
+  {
+    id: '2',
+    username: 'Sarah Chen',
+    avatarUrl: undefined,
+    userRole: 'member' as const,
+    text: 'This is amazing content! I learned so much from this stream. Can\'t wait for the next one! 🔥',
+    timestamp: '2 days ago',
+    likeCount: 42,
+    replyCount: 5,
+  },
+  {
+    id: '3',
+    username: 'Mike_Tech',
+    avatarUrl: undefined,
+    userRole: 'viewer' as const,
+    text: 'Great explanation at 12:34 👍',
+    timestamp: '1 week ago',
+    likeCount: 15,
+    replyCount: 1,
+  },
+];
 
-function VideoPlayer({ playbackUrl, duration, onProgress, onComplete }: VideoPlayerProps): JSX.Element {
-  const [currentTime, setCurrentTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  // Mock progress for demo
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  return (
-    <View style={playerStyles.container}>
-      {/* Video area */}
-      <TouchableOpacity 
-        style={playerStyles.videoArea}
-        activeOpacity={0.9}
-        onPress={() => setIsPlaying(!isPlaying)}
-      >
-        <Text style={playerStyles.playIcon}>{isPlaying ? '⏸' : '▶'}</Text>
-        <Text style={playerStyles.devNote}>
-          VOD Player{'\n'}
-          <Text style={playerStyles.devNoteSmall}>{playbackUrl?.substring(0, 40)}...</Text>
-        </Text>
-      </TouchableOpacity>
-
-      {/* Controls bar */}
-      <View style={playerStyles.controlsBar}>
-        {/* Progress bar */}
-        <View style={playerStyles.progressTrack}>
-          <View style={[playerStyles.progressFill, { width: `${progressPercent}%` }]} />
-          <View style={[playerStyles.progressThumb, { left: `${progressPercent}%` }]} />
-        </View>
-
-        {/* Time */}
-        <View style={playerStyles.timeRow}>
-          <Text style={playerStyles.timeText}>{formatDuration(currentTime)}</Text>
-          <Text style={playerStyles.timeText}>{formatDuration(duration)}</Text>
-        </View>
-      </View>
-
-      {/* 
-        Production implementation:
-        <Video
-          source={{ uri: playbackUrl }}
-          style={playerStyles.video}
-          resizeMode="contain"
-          useNativeControls
-          onPlaybackStatusUpdate={(status) => {
-            if (status.isLoaded) {
-              setCurrentTime(Math.floor(status.positionMillis / 1000));
-              if (status.didJustFinish) onComplete?.();
-            }
-          }}
-        />
-      */}
-    </View>
-  );
-}
-
-const playerStyles = StyleSheet.create({
-  container: {
-    width: SCREEN_WIDTH,
-    height: VIDEO_HEIGHT,
-    backgroundColor: '#0f0f0f',
-  },
-  videoArea: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playIcon: {
-    fontSize: 48,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 8,
-  },
-  devNote: {
-    color: '#666',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  devNoteSmall: {
-    fontSize: 9,
-    color: '#444',
-  },
-  controlsBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-    paddingTop: 4,
-  },
-  progressTrack: {
-    height: 3,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 1.5,
-    marginBottom: 6,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#ff0000',
-    borderRadius: 1.5,
-  },
-  progressThumb: {
-    position: 'absolute',
-    top: -4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#ff0000',
-    marginLeft: -6,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  timeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontFamily: 'monospace',
-  },
-});
 
 // =============================================================================
 // MAIN COMPONENT
@@ -201,8 +105,14 @@ export default function ReplayScreen(): JSX.Element {
     clear,
   } = useReplayViewer();
 
-  // Description expansion
-  const [descExpanded, setDescExpanded] = useState(false);
+  // Dropdown menu state
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // Saved state
+  const [isSaved, setIsSaved] = useState(false);
+  // Liked state
+  const [isLiked, setIsLiked] = useState(false);
+  // Disliked state
+  const [isDisliked, setIsDisliked] = useState(false);
 
   // Track if view has been counted
   const viewTracked = useRef(false);
@@ -250,6 +160,15 @@ export default function ReplayScreen(): JSX.Element {
     if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
     return `${Math.floor(diffDays / 365)} years ago`;
   };
+
+  // Create menu items for the dropdown
+  const menuItems = createVideoMenuItems({
+    onSaveToPlaylist: () => Alert.alert('Save', 'Video saved to playlist'),
+    onDownload: () => Alert.alert('Download', 'Download started'),
+    onShare: () => Alert.alert('Share', 'Share dialog'),
+    onNotInterested: () => Alert.alert('Feedback', 'We won\'t recommend this again'),
+    onReport: () => Alert.alert('Report', 'Report submitted'),
+  });
 
   // ---------------------------------------------------------------------------
   // RENDER: LOADING STATE
@@ -305,7 +224,10 @@ export default function ReplayScreen(): JSX.Element {
           </Text>
           <Text style={styles.errorMsg}>{permissionDenied}</Text>
           {isMembersOnly && (
-            <TouchableOpacity style={styles.upgradeBtn} onPress={() => {}}>
+            <TouchableOpacity 
+              style={styles.upgradeBtn} 
+              onPress={() => navigation.navigate('Upgrade')}
+            >
               <Text style={styles.upgradeBtnText}>Join Membership</Text>
             </TouchableOpacity>
           )}
@@ -381,18 +303,14 @@ export default function ReplayScreen(): JSX.Element {
       <StatusBar barStyle="light-content" backgroundColor="#0f0f0f" />
 
       {/* Video Player (fixed at top) */}
-      {playbackUrl ? (
-        <VideoPlayer
-          playbackUrl={playbackUrl}
-          duration={recording.durationSeconds || 0}
-          onProgress={handleProgress}
-          onComplete={handleComplete}
-        />
-      ) : (
-        <View style={[playerStyles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-          <Text style={{ color: '#888' }}>No playback URL available</Text>
-        </View>
-      )}
+      <VideoPlayer
+        videoUrl={playbackUrl || ''}
+        thumbnailUrl={recording.thumbnailUrl}
+        title={recording.title}
+        duration={recording.durationSeconds || 0}
+        isLive={false}
+        onPlayPause={() => {}}
+      />
 
       {/* Scrollable content below player */}
       <ScrollView style={styles.scrollArea} bounces={false}>
@@ -418,106 +336,124 @@ export default function ReplayScreen(): JSX.Element {
 
           {/* Action buttons */}
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.actionBtn}>
-              <Text style={styles.actionIcon}>👍</Text>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageLikeIcon
+                  liked={isLiked}
+                  onPress={() => setIsLiked(!isLiked)}
+                  size={24}
+                />
+              </View>
               <Text style={styles.actionText}>Like</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn}>
-              <Text style={styles.actionIcon}>👎</Text>
+            </View>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageDislikeIcon
+                  disliked={isDisliked}
+                  onPress={() => setIsDisliked(!isDisliked)}
+                  size={24}
+                />
+              </View>
               <Text style={styles.actionText}>Dislike</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn}>
-              <Text style={styles.actionIcon}>↗</Text>
+            </View>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageShareIcon
+                  onPress={() => {
+                    // TODO: Implement share action
+                  }}
+                  size={24}
+                />
+              </View>
               <Text style={styles.actionText}>Share</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn}>
-              <Text style={styles.actionIcon}>⬇</Text>
+            </View>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageSaveIcon
+                  saved={isSaved}
+                  onPress={() => setIsSaved(!isSaved)}
+                  size={24}
+                />
+              </View>
               <Text style={styles.actionText}>Save</Text>
-            </TouchableOpacity>
+            </View>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageMoreIcon
+                  onPress={() => setIsMenuOpen(true)}
+                  size={24}
+                />
+              </View>
+              <Text style={styles.actionText}>More</Text>
+            </View>
           </View>
         </View>
 
-        {/* Divider */}
-        <View style={styles.divider} />
+        {/* Dropdown Menu */}
+        <VideoPageIconsDropdown
+          items={menuItems}
+          visible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          anchorPosition="top-right"
+        />
 
-        {/* Creator row */}
-        <TouchableOpacity
-          style={styles.creatorRow}
-          onPress={() => {
+        {/* Creator + Description Section */}
+        <VideoDescription
+          viewCount={recording.viewCount || 0}
+          uploadDate={recording.streamStartedAt}
+          description={recording.description}
+          creatorName={recording.creatorName || 'Creator'}
+          subscriberCount="1.2M"
+          onCreatorPress={() => {
             // @ts-ignore - navigation type
             navigation.navigate('CreatorProfile', { id: recording.creatorId });
           }}
-        >
-          <View style={styles.creatorAvatar}>
-            <Text style={styles.creatorAvatarText}>
-              {recording.creatorName?.charAt(0)?.toUpperCase() || '?'}
-            </Text>
-          </View>
-          <View style={styles.creatorInfo}>
-            <Text style={styles.creatorName}>{recording.creatorName || 'Creator'}</Text>
-            <Text style={styles.creatorSubs}>Tap to view channel</Text>
-          </View>
-          <TouchableOpacity style={styles.subscribeBtn}>
-            <Text style={styles.subscribeBtnText}>Subscribe</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          onSubscribePress={() => {
+            // TODO: Implement subscribe action
+          }}
+        />
 
-        {/* Divider */}
-        <View style={styles.divider} />
-
-        {/* Description box */}
-        <TouchableOpacity
-          style={styles.descriptionBox}
-          activeOpacity={0.8}
-          onPress={() => setDescExpanded(!descExpanded)}
-        >
-          {/* Stats chips */}
-          <View style={styles.descChips}>
-            <View style={styles.descChip}>
-              <Text style={styles.descChipText}>⏱ {formattedDuration}</Text>
-            </View>
-            {formattedFileSize && (
-              <View style={styles.descChip}>
-                <Text style={styles.descChipText}>📁 {formattedFileSize}</Text>
-              </View>
-            )}
-            {recording.peakLiveViewers && (
-              <View style={styles.descChip}>
-                <Text style={styles.descChipText}>👁 {recording.peakLiveViewers} peak</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Description text */}
-          {recording.description ? (
-            <Text 
-              style={styles.descriptionText} 
-              numberOfLines={descExpanded ? undefined : 3}
-            >
-              {recording.description}
-            </Text>
-          ) : (
-            <Text style={styles.noDescription}>No description available</Text>
-          )}
-
-          {/* Expand/collapse */}
-          <Text style={styles.expandText}>
-            {descExpanded ? 'Show less' : 'Show more'}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Comments section placeholder */}
+        {/* Comments section */}
         <View style={styles.commentsSection}>
           <View style={styles.commentsHeader}>
             <Text style={styles.commentsTitle}>Comments</Text>
-            <Text style={styles.commentsCount}>0</Text>
+            <Text style={styles.commentsCount}>{MOCK_COMMENTS.length}</Text>
+            <TouchableOpacity style={styles.commentsSortButton}>
+              <Text style={styles.commentsSortText}>⇅ Sort by</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.commentsPlaceholder}>
-            <Text style={styles.commentsPlaceholderIcon}>💬</Text>
-            <Text style={styles.commentsPlaceholderText}>
-              Comments coming soon
-            </Text>
-          </View>
+          
+          {/* Comment input prompt */}
+          <TouchableOpacity style={styles.commentInputPrompt}>
+            <View style={styles.commentInputAvatar}>
+              <Text style={styles.commentInputAvatarText}>👤</Text>
+            </View>
+            <Text style={styles.commentInputPlaceholder}>Add a comment...</Text>
+          </TouchableOpacity>
+          
+          {/* Comments list */}
+          {MOCK_COMMENTS.map((comment) => (
+            <CommentItem
+              key={comment.id}
+              mode="vod"
+              avatarUrl={comment.avatarUrl}
+              username={comment.username}
+              userRole={comment.userRole}
+              text={comment.text}
+              timestamp={comment.timestamp}
+              likeCount={comment.likeCount}
+              replyCount={comment.replyCount}
+              showActions={true}
+              onLike={() => {}}
+              onDislike={() => {}}
+              onReply={() => {}}
+            />
+          ))}
+          
+          {/* Load more comments */}
+          <TouchableOpacity style={styles.loadMoreComments}>
+            <Text style={styles.loadMoreText}>Show more comments</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Bottom padding */}
@@ -702,98 +638,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#272727',
   },
 
-  // Creator row
-  creatorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-  },
-  creatorAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#ff0000',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  creatorAvatarText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  creatorInfo: {
-    flex: 1,
-  },
-  creatorName: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  creatorSubs: {
-    color: '#aaa',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  subscribeBtn: {
-    backgroundColor: '#fff',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-  },
-  subscribeBtnText: {
-    color: '#0f0f0f',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Description box
-  descriptionBox: {
-    backgroundColor: '#272727',
-    margin: 12,
-    borderRadius: 12,
-    padding: 12,
-  },
-  descChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 8,
-    gap: 8,
-  },
-  descChip: {
-    backgroundColor: '#3f3f3f',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-  },
-  descChipText: {
-    color: '#fff',
-    fontSize: 12,
-  },
-  descriptionText: {
-    color: '#ccc',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  noDescription: {
-    color: '#888',
-    fontSize: 14,
-    fontStyle: 'italic',
-  },
-  expandText: {
-    color: '#3ea6ff',
-    fontSize: 13,
-    fontWeight: '500',
-    marginTop: 8,
-  },
-
   // Comments section
   commentsSection: {
-    padding: 12,
+    paddingTop: 12,
   },
   commentsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 12,
     marginBottom: 12,
   },
   commentsTitle: {
@@ -805,19 +657,48 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 14,
     marginLeft: 8,
+    flex: 1,
   },
-  commentsPlaceholder: {
-    backgroundColor: '#272727',
-    borderRadius: 12,
-    padding: 32,
+  commentsSortButton: {
+    padding: 4,
+  },
+  commentsSortText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  commentInputPrompt: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  commentsPlaceholderIcon: {
-    fontSize: 32,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#272727',
     marginBottom: 8,
   },
-  commentsPlaceholderText: {
+  commentInputAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#374151',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  commentInputAvatarText: {
+    fontSize: 18,
+  },
+  commentInputPlaceholder: {
+    marginLeft: 12,
     color: '#888',
     fontSize: 14,
+  },
+  loadMoreComments: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  loadMoreText: {
+    color: '#3ea6ff',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

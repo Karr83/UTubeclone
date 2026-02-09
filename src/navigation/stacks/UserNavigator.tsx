@@ -18,7 +18,9 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Text } from 'react-native';
+import { NavigationIcon } from '../../components/icons/navigation';
+import { NavigationProfile } from '../../components/navigation';
+import { darkTheme } from '../../theme';
 
 // =============================================================================
 // SCREEN IMPORTS
@@ -183,14 +185,15 @@ export default function UserNavigator(): JSX.Element {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#6366F1',
-        tabBarInactiveTintColor: '#6B7280',
+        tabBarActiveTintColor: darkTheme.youtube.red,
+        tabBarInactiveTintColor: darkTheme.semantic.textSecondary,
         tabBarStyle: {
           paddingBottom: 8,
           paddingTop: 8,
           height: 60,
-          backgroundColor: '#FFFFFF',
-          borderTopColor: '#E5E7EB',
+          backgroundColor: darkTheme.semantic.background,
+          borderTopColor: darkTheme.semantic.border,
+          borderTopWidth: 1,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -203,8 +206,8 @@ export default function UserNavigator(): JSX.Element {
         component={HomeStackNavigator}
         options={{
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20 }}>🏠</Text>
+          tabBarIcon: ({ focused, color }) => (
+            <NavigationIcon name="home" focused={focused} size={24} />
           ),
         }}
       />
@@ -213,8 +216,8 @@ export default function UserNavigator(): JSX.Element {
         component={LiveStackNavigator}
         options={{
           tabBarLabel: 'Live',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20 }}>📺</Text>
+          tabBarIcon: ({ focused, color }) => (
+            <NavigationIcon name="live" focused={focused} size={24} />
           ),
         }}
       />
@@ -223,8 +226,8 @@ export default function UserNavigator(): JSX.Element {
         component={LibraryStackNavigator}
         options={{
           tabBarLabel: 'Library',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20 }}>📚</Text>
+          tabBarIcon: ({ focused, color }) => (
+            <NavigationIcon name="library" focused={focused} size={24} />
           ),
         }}
       />
@@ -233,8 +236,8 @@ export default function UserNavigator(): JSX.Element {
         component={ProfileStackNavigator}
         options={{
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20 }}>👤</Text>
+          tabBarIcon: ({ focused, color }) => (
+            <NavigationProfile focused={focused} size={24} />
           ),
         }}
       />

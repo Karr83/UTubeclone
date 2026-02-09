@@ -41,6 +41,7 @@ import {
   ChatPermissions,
   CHAT_CONFIG,
 } from '../../types/chat';
+import { CommentItem, UserRole } from '../comment';
 
 // =============================================================================
 // PROPS
@@ -81,19 +82,14 @@ function MessageItem({
 }: MessageItemProps): JSX.Element {
   const [showActions, setShowActions] = useState(false);
   
-  // Get role badge color
-  const getRoleBadge = () => {
+  // Map chat role to CommentItem UserRole
+  const mapRole = (): UserRole => {
     switch (message.userRole) {
-      case 'admin':
-        return { bg: '#EF4444', text: 'ADMIN' };
-      case 'creator':
-        return { bg: '#8B5CF6', text: 'CREATOR' };
-      default:
-        return null;
+      case 'admin': return 'admin';
+      case 'creator': return 'creator';
+      default: return 'viewer';
     }
   };
-  
-  const roleBadge = getRoleBadge();
   
   // Handle long press for actions
   const handleLongPress = () => {
@@ -146,32 +142,17 @@ function MessageItem({
   };
   
   return (
-    <TouchableOpacity
-      style={[
-        styles.messageItem,
-        message.isOwnMessage && styles.ownMessage,
-      ]}
-      onLongPress={handleLongPress}
-      delayLongPress={500}
-      activeOpacity={0.8}
-    >
-      {/* Username row */}
-      <View style={styles.messageHeader}>
-        <Text style={styles.username}>{message.username}</Text>
-        
-        {roleBadge && (
-          <View style={[styles.roleBadge, { backgroundColor: roleBadge.bg }]}>
-            <Text style={styles.roleBadgeText}>{roleBadge.text}</Text>
-          </View>
-        )}
-        
-        <Text style={styles.timestamp}>
-          {formatTime(message.createdAt)}
-        </Text>
-      </View>
-      
-      {/* Message text */}
-      <Text style={styles.messageText}>{message.message}</Text>
+    <View style={[styles.messageWrapper, showActions && styles.messageWrapperWithActions]}>
+      <CommentItem
+        mode="live"
+        username={message.username}
+        userRole={mapRole()}
+        text={message.message}
+        timestamp={message.createdAt}
+        isOwnComment={message.isOwnMessage}
+        showActions={false}
+        onLongPress={handleLongPress}
+      />
       
       {/* Action buttons (shown on long press) */}
       {showActions && (
@@ -211,7 +192,7 @@ function MessageItem({
           </TouchableOpacity>
         </View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -555,47 +536,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   
-  // Message Item
-  messageItem: {
+  // Message Item (wraps CommentItem)
+  messageWrapper: {
     backgroundColor: '#374151',
     borderRadius: 8,
-    padding: 10,
     marginBottom: 8,
+    overflow: 'hidden',
   },
-  ownMessage: {
-    backgroundColor: '#1E40AF',
-  },
-  messageHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  username: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '600',
-    marginRight: 6,
-  },
-  roleBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  roleBadgeText: {
-    color: '#FFF',
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  timestamp: {
-    color: '#9CA3AF',
-    fontSize: 11,
-    marginLeft: 'auto',
-  },
-  messageText: {
-    color: '#E5E7EB',
-    fontSize: 14,
-    lineHeight: 20,
+  messageWrapperWithActions: {
+    borderWidth: 1,
+    borderColor: '#4B5563',
   },
   
   // Actions

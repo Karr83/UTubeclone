@@ -11,23 +11,23 @@
  * Reuses existing logic from useStreamViewer hook and ChatContainer.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Dimensions,
-  Image,
   ScrollView,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 
 import { useStreamViewer } from '../../hooks/useStreamViewer';
 import { ChatContainer } from '../../components/chat';
+import { VideoDescription, VideoPlayer, VideoPageIconsDropdown, VideoPageMoreIcon, VideoPageSaveIcon, VideoPageShareIcon, VideoPageDislikeIcon, VideoPageLikeIcon, createVideoMenuItems } from '../../components/video';
 
 // =============================================================================
 // TYPES
@@ -39,191 +39,6 @@ type StreamRouteParams = {
   };
 };
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const VIDEO_HEIGHT = SCREEN_WIDTH * (9 / 16); // 16:9 aspect ratio
-
-// =============================================================================
-// VIDEO PLAYER COMPONENT
-// =============================================================================
-
-interface VideoPlayerProps {
-  playbackUrl: string;
-  mode: 'video' | 'audio_only' | 'avatar';
-  avatarUrl?: string;
-  isLive: boolean;
-}
-
-function VideoPlayer({ playbackUrl, mode, avatarUrl, isLive }: VideoPlayerProps): JSX.Element {
-  // Audio-only mode
-  if (mode === 'audio_only') {
-    return (
-      <View style={playerStyles.container}>
-        <View style={playerStyles.audioWrap}>
-          <View style={playerStyles.audioIconCircle}>
-            <Text style={playerStyles.audioIcon}>🎙️</Text>
-          </View>
-          <Text style={playerStyles.audioLabel}>Audio Only</Text>
-          {isLive && (
-            <View style={playerStyles.waveformMock}>
-              {[...Array(12)].map((_, i) => (
-                <View 
-                  key={i} 
-                  style={[
-                    playerStyles.waveBar, 
-                    { height: 8 + Math.random() * 24 }
-                  ]} 
-                />
-              ))}
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  }
-
-  // Avatar mode (audio + static image)
-  if (mode === 'avatar') {
-    return (
-      <View style={playerStyles.container}>
-        <View style={playerStyles.avatarWrap}>
-          {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={playerStyles.avatarImg} />
-          ) : (
-            <View style={playerStyles.avatarPlaceholder}>
-              <Text style={playerStyles.avatarEmoji}>🎭</Text>
-            </View>
-          )}
-          {isLive && (
-            <View style={playerStyles.audioIndicator}>
-              <Text style={playerStyles.audioIndicatorText}>♪ Audio playing</Text>
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  }
-
-  // Video mode (default)
-  return (
-    <View style={playerStyles.container}>
-      {/* In production: Replace with expo-av or react-native-video */}
-      <View style={playerStyles.videoPlaceholder}>
-        <Text style={playerStyles.playIcon}>▶</Text>
-        <Text style={playerStyles.devNote}>
-          Video Player{'\n'}
-          <Text style={playerStyles.devNoteSmall}>{playbackUrl?.substring(0, 40)}...</Text>
-        </Text>
-      </View>
-      {/* 
-        Production implementation:
-        <Video
-          source={{ uri: playbackUrl }}
-          style={playerStyles.video}
-          resizeMode="contain"
-          shouldPlay
-          useNativeControls
-        />
-      */}
-    </View>
-  );
-}
-
-const playerStyles = StyleSheet.create({
-  container: {
-    width: SCREEN_WIDTH,
-    height: VIDEO_HEIGHT,
-    backgroundColor: '#0f0f0f',
-  },
-  videoPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playIcon: {
-    fontSize: 48,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 8,
-  },
-  devNote: {
-    color: '#666',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  devNoteSmall: {
-    fontSize: 9,
-    color: '#444',
-  },
-  audioWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1a1a2e',
-  },
-  audioIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  audioIcon: {
-    fontSize: 36,
-  },
-  audioLabel: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 16,
-  },
-  waveformMock: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: 32,
-    gap: 3,
-  },
-  waveBar: {
-    width: 4,
-    backgroundColor: '#ff0000',
-    borderRadius: 2,
-  },
-  avatarWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1a1a2e',
-  },
-  avatarImg: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  avatarPlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarEmoji: {
-    fontSize: 56,
-  },
-  audioIndicator: {
-    marginTop: 12,
-    backgroundColor: 'rgba(255,0,0,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  audioIndicatorText: {
-    color: '#ff6b6b',
-    fontSize: 12,
-  },
-});
 
 // =============================================================================
 // MAIN COMPONENT
@@ -247,6 +62,15 @@ export default function LiveStreamScreen(): JSX.Element {
     refresh,
   } = useStreamViewer();
 
+  // Dropdown menu state
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // Saved state
+  const [isSaved, setIsSaved] = useState(false);
+  // Liked state
+  const [isLiked, setIsLiked] = useState(false);
+  // Disliked state
+  const [isDisliked, setIsDisliked] = useState(false);
+
   // Join stream on mount
   useEffect(() => {
     if (streamId) {
@@ -256,6 +80,14 @@ export default function LiveStreamScreen(): JSX.Element {
       leaveStream();
     };
   }, [streamId]);
+
+  // Create menu items for the dropdown
+  const menuItems = createVideoMenuItems({
+    onSaveToPlaylist: () => Alert.alert('Save', 'Stream saved to playlist'),
+    onShare: () => Alert.alert('Share', 'Share dialog'),
+    onNotInterested: () => Alert.alert('Feedback', 'We won\'t recommend this again'),
+    onReport: () => Alert.alert('Report', 'Report submitted'),
+  });
 
   // ---------------------------------------------------------------------------
   // RENDER: LOADING STATE
@@ -291,7 +123,10 @@ export default function LiveStreamScreen(): JSX.Element {
             {error || 'This stream could not be loaded.'}
           </Text>
           {isMembersOnly && (
-            <TouchableOpacity style={styles.upgradeBtn} onPress={() => {}}>
+            <TouchableOpacity 
+              style={styles.upgradeBtn} 
+              onPress={() => navigation.navigate('Upgrade')}
+            >
               <Text style={styles.upgradeBtnText}>Join Membership</Text>
             </TouchableOpacity>
           )}
@@ -357,10 +192,13 @@ export default function LiveStreamScreen(): JSX.Element {
 
       {/* Video Player (fixed at top) */}
       <VideoPlayer
-        playbackUrl={playbackUrl || ''}
+        videoUrl={playbackUrl || ''}
+        title={stream.title}
         mode={stream.mode}
         avatarUrl={stream.avatarUrl}
-        isLive={isLive}
+        isLive={true}
+        isPlaying={isLive}
+        viewerCount={viewerCount}
       />
 
       {/* Scrollable content below player */}
@@ -388,41 +226,83 @@ export default function LiveStreamScreen(): JSX.Element {
             </Text>
           </View>
 
-          {/* Creator row */}
-          <TouchableOpacity 
-            style={styles.creatorRow}
-            onPress={() => {
-              // Navigate to creator profile
+          {/* Action buttons */}
+          <View style={styles.actionRow}>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageLikeIcon
+                  liked={isLiked}
+                  onPress={() => setIsLiked(!isLiked)}
+                  size={24}
+                />
+              </View>
+              <Text style={styles.actionText}>Like</Text>
+            </View>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageDislikeIcon
+                  disliked={isDisliked}
+                  onPress={() => setIsDisliked(!isDisliked)}
+                  size={24}
+                />
+              </View>
+              <Text style={styles.actionText}>Dislike</Text>
+            </View>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageShareIcon
+                  onPress={() => {
+                    // TODO: Implement share action
+                  }}
+                  size={24}
+                />
+              </View>
+              <Text style={styles.actionText}>Share</Text>
+            </View>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageSaveIcon
+                  saved={isSaved}
+                  onPress={() => setIsSaved(!isSaved)}
+                  size={24}
+                />
+              </View>
+              <Text style={styles.actionText}>Save</Text>
+            </View>
+            <View style={styles.actionBtn}>
+              <View style={{ marginBottom: 4 }}>
+                <VideoPageMoreIcon
+                  onPress={() => setIsMenuOpen(true)}
+                  size={24}
+                />
+              </View>
+              <Text style={styles.actionText}>More</Text>
+            </View>
+          </View>
+
+          {/* Creator + Description Section */}
+          <VideoDescription
+            viewCount={viewerCount}
+            description={stream.description}
+            creatorName={stream.creatorName || 'Creator'}
+            subscriberCount="1.2M"
+            onCreatorPress={() => {
               // @ts-ignore - navigation type
               navigation.navigate('CreatorProfile', { id: stream.creatorId });
             }}
-          >
-            <View style={styles.creatorAvatar}>
-              <Text style={styles.creatorAvatarText}>
-                {stream.creatorName?.charAt(0)?.toUpperCase() || '?'}
-              </Text>
-            </View>
-            <View style={styles.creatorInfo}>
-              <Text style={styles.creatorName}>{stream.creatorName || 'Creator'}</Text>
-              <Text style={styles.creatorMeta}>
-                {stream.mode === 'video' ? '📹 Video' : 
-                 stream.mode === 'audio_only' ? '🎙️ Audio' : '🎭 Avatar'}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.subscribeBtn}>
-              <Text style={styles.subscribeBtnText}>Subscribe</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-
-          {/* Description (collapsible) */}
-          {stream.description && (
-            <View style={styles.descriptionBox}>
-              <Text style={styles.descriptionText} numberOfLines={3}>
-                {stream.description}
-              </Text>
-            </View>
-          )}
+            onSubscribePress={() => {
+              // TODO: Implement subscribe action
+            }}
+          />
         </View>
+
+        {/* Dropdown Menu */}
+        <VideoPageIconsDropdown
+          items={menuItems}
+          visible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          anchorPosition="top-right"
+        />
 
         {/* Divider */}
         <View style={styles.divider} />
@@ -595,66 +475,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
-  // Creator row
-  creatorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#272727',
-    marginTop: 4,
-  },
-  creatorAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#ff0000',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  creatorAvatarText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  creatorInfo: {
-    flex: 1,
-  },
-  creatorName: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  creatorMeta: {
-    color: '#aaa',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  subscribeBtn: {
-    backgroundColor: '#fff',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-  },
-  subscribeBtnText: {
-    color: '#0f0f0f',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Description
-  descriptionBox: {
-    backgroundColor: '#272727',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
-  },
-  descriptionText: {
-    color: '#ccc',
-    fontSize: 14,
-    lineHeight: 20,
-  },
 
   // Divider
   divider: {
@@ -668,5 +488,29 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     borderRadius: 12,
     overflow: 'hidden',
+  },
+
+  // Action row
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#272727',
+    marginBottom: 8,
+  },
+  actionBtn: {
+    alignItems: 'center',
+    minWidth: 60,
+  },
+  actionIcon: {
+    fontSize: 22,
+    marginBottom: 4,
+  },
+  actionText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '500',
   },
 });

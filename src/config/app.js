@@ -1,6 +1,6 @@
 // App Configuration - Core app settings
 export const APP_CONFIG = {
-  name: 'MS Gift',
+  name: 'VibeTube',
   version: '1.0.0',
   
   // Feature flags

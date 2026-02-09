@@ -23,6 +23,21 @@
  * const tier = await membershipService.getMembershipTier(userId);
  */
 
+// #region agent log
+console.log('[DEBUG-B] membership.service.ts module loading START');
+// #endregion
+
+// PHASE 2: Comment out ALL Firebase imports
+// import {
+//   doc,
+//   getDoc,
+//   setDoc,
+//   updateDoc,
+//   serverTimestamp,
+// } from 'firebase/firestore';
+// import { firestore } from '../config/firebase';
+
+// PHASE 3B: Import real Firebase functions
 import {
   doc,
   getDoc,
@@ -30,7 +45,6 @@ import {
   updateDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-
 import { firestore } from '../config/firebase';
 import { 
   MembershipTier, 
@@ -66,6 +80,12 @@ export const membershipService = {
    */
   getMembershipTier: async (userId: string): Promise<MembershipTier> => {
     try {
+      // Safety check - if Firebase is not initialized, return default tier
+      if (!firestore) {
+        console.log('⚠️ Firebase not initialized, using default membership tier');
+        return DEFAULT_MEMBERSHIP_TIER;
+      }
+
       const userDoc = await getDoc(doc(firestore, USERS_COLLECTION, userId));
       
       if (!userDoc.exists()) {
@@ -95,6 +115,17 @@ export const membershipService = {
    */
   getMembership: async (userId: string): Promise<UserMembership> => {
     try {
+      // Safety check - if Firebase is not initialized, return default membership
+      if (!firestore) {
+        console.log('⚠️ Firebase not initialized, using default membership');
+        return {
+          tier: DEFAULT_MEMBERSHIP_TIER,
+          active: true,
+          updatedAt: new Date(),
+          expiresAt: null,
+        };
+      }
+
       const userDoc = await getDoc(doc(firestore, USERS_COLLECTION, userId));
       
       if (!userDoc.exists()) {
@@ -146,6 +177,12 @@ export const membershipService = {
     expiresAt?: Date | null
   ): Promise<void> => {
     try {
+      // Safety check - if Firebase is not initialized, skip update
+      if (!firestore) {
+        console.log('⚠️ Firebase not initialized, skipping membership update');
+        return;
+      }
+
       const userRef = doc(firestore, USERS_COLLECTION, userId);
       
       const updateData: Record<string, any> = {
@@ -176,6 +213,12 @@ export const membershipService = {
    */
   initializeMembership: async (userId: string): Promise<void> => {
     try {
+      // Safety check - if Firebase is not initialized, skip initialization
+      if (!firestore) {
+        console.log('⚠️ Firebase not initialized, skipping membership initialization');
+        return;
+      }
+      
       const userRef = doc(firestore, USERS_COLLECTION, userId);
       
       await setDoc(

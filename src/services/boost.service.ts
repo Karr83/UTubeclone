@@ -60,6 +60,7 @@
  * ```
  */
 
+/* PHASE 2: Firebase imports commented out
 import {
   doc,
   getDoc,
@@ -74,7 +75,23 @@ import {
   Timestamp,
   QueryConstraint,
 } from 'firebase/firestore';
+*/
 
+// PHASE 3B: Import real Firebase functions
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  serverTimestamp,
+  Timestamp,
+  QueryConstraint,
+} from 'firebase/firestore';
 import { firestore } from '../config/firebase';
 import {
   Content,
@@ -204,6 +221,17 @@ export const boostService = {
     userId: string,
     contentId: string
   ): Promise<BoostEligibility> => {
+    // PHASE 3B: Return default eligibility if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, returning default boost eligibility');
+      return {
+        canBoost: false,
+        maxLevel: 1,
+        availableDurations: [],
+        reason: 'firebase_offline',
+      };
+    }
+
     try {
       // Get user profile
       const userDoc = await getDoc(doc(firestore, USERS_COLLECTION, userId));
@@ -343,6 +371,16 @@ export const boostService = {
     request: BoostContentRequest,
     userId: string
   ): Promise<BoostContentResult> => {
+    // PHASE 3B: Return error if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, cannot boost content');
+      return {
+        success: false,
+        error: 'Firebase not initialized. Please check your configuration.',
+        level: 1,
+      };
+    }
+
     const { contentId, level = 1, duration = '24h' } = request;
     
     try {
@@ -429,6 +467,12 @@ export const boostService = {
     userId: string,
     isAdmin: boolean = false
   ): Promise<{ success: boolean; error?: string }> => {
+    // PHASE 3B: Return error if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, cannot remove boost');
+      return { success: false, error: 'Firebase not initialized' };
+    }
+
     try {
       const contentDoc = await getDoc(doc(firestore, CONTENT_COLLECTION, contentId));
       
@@ -557,6 +601,12 @@ export const boostService = {
   getBoostedContent: async (
     pageLimit: number = 50
   ): Promise<ContentListResponse> => {
+    // PHASE 3B: Return empty list if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, returning empty boosted content');
+      return { items: [], hasMore: false };
+    }
+
     try {
       const q = query(
         collection(firestore, CONTENT_COLLECTION),
@@ -592,8 +642,18 @@ export const boostService = {
         hasMore: items.length === pageLimit,
         lastId: items.length > 0 ? items[items.length - 1].id : undefined,
       };
-    } catch (error) {
-      console.error('Error fetching boosted content:', error);
+    } catch (error: any) {
+      // PHASE 3B: Handle permission errors gracefully (Firestore rules not set up yet)
+      if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
+        console.log('⚠️ Firestore permissions not configured, using empty feed');
+      } else if (error?.code === 'failed-precondition' && error?.message?.includes('index')) {
+        // Index error - provide helpful message
+        console.warn('⚠️ Firestore index required. Creating index...');
+        console.warn('📋 Index URL:', error.message.match(/https:\/\/[^\s]+/)?.[0] || 'Check Firebase Console');
+        console.warn('💡 Run: firebase deploy --only firestore:indexes');
+      } else {
+        console.error('Error fetching boosted content:', error);
+      }
       return { items: [], hasMore: false };
     }
   },
@@ -621,11 +681,17 @@ export const boostService = {
     pageLimit: number = 20,
     lastId?: string
   ): Promise<ContentListResponse> => {
+    // PHASE 3B: Return empty list if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, returning empty feed');
+      return { items: [], hasMore: false };
+    }
+
     try {
       // Calculate how many boosted vs regular items to fetch
       const boostedLimit = Math.min(5, Math.floor(pageLimit * 0.25)); // Max 25% boosted
       const regularLimit = pageLimit - boostedLimit;
-      
+
       // Fetch boosted content
       const boostedResponse = await boostService.getBoostedContent(boostedLimit);
       
@@ -644,7 +710,7 @@ export const boostService = {
           // startAfter would be added here
         }
       }
-      
+
       const regularQuery = query(
         collection(firestore, CONTENT_COLLECTION),
         ...regularConstraints
@@ -663,8 +729,18 @@ export const boostService = {
         hasMore: regularItems.length === regularLimit,
         lastId: allItems.length > 0 ? allItems[allItems.length - 1].id : undefined,
       };
-    } catch (error) {
-      console.error('Error fetching feed with boosted:', error);
+    } catch (error: any) {
+      // PHASE 3B: Handle permission errors gracefully (Firestore rules not set up yet)
+      if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
+        console.log('⚠️ Firestore permissions not configured, using empty feed');
+      } else if (error?.code === 'failed-precondition' && error?.message?.includes('index')) {
+        // Index error - provide helpful message
+        console.warn('⚠️ Firestore index required. Creating index...');
+        console.warn('📋 Index URL:', error.message.match(/https:\/\/[^\s]+/)?.[0] || 'Check Firebase Console');
+        console.warn('💡 Run: firebase deploy --only firestore:indexes');
+      } else {
+        console.error('Error fetching feed with boosted:', error);
+      }
       return { items: [], hasMore: false };
     }
   },
@@ -675,6 +751,12 @@ export const boostService = {
    * In production, run this via Cloud Functions scheduler.
    */
   cleanupExpiredBoosts: async (expiredIds: string[]): Promise<void> => {
+    // PHASE 3B: Skip cleanup if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, skipping boost cleanup');
+      return;
+    }
+
     try {
       const updatePromises = expiredIds.map((id) =>
         updateDoc(doc(firestore, CONTENT_COLLECTION, id), {
@@ -703,6 +785,12 @@ export const boostService = {
     activeBoostedCount: number;
     totalBoostsUsed: number;
   }> => {
+    // PHASE 3B: Return default stats if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, returning default boost stats');
+      return { activeBoostedCount: 0, totalBoostsUsed: 0 };
+    }
+
     try {
       const q = query(
         collection(firestore, CONTENT_COLLECTION),

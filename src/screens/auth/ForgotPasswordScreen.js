@@ -1,11 +1,38 @@
 // ForgotPasswordScreen - Password recovery
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, Alert } from 'react-native';
 import { ScreenContainer } from '../../components/layouts';
 import { Text, Button } from '../../components/common';
 import { Input } from '../../components/forms';
 
 const ForgotPasswordScreen = ({ navigation }) => {
+  const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleResetPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert('Validation Error', 'Please enter your email address.');
+      return;
+    }
+
+    if (!email.includes('@')) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+
+    setIsLoading(true);
+    
+    // Simulate API call
+    setTimeout(() => {
+      setIsLoading(false);
+      Alert.alert(
+        'Reset Link Sent',
+        'If an account exists with this email, you will receive a password reset link shortly.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
+    }, 1000);
+  };
+
   return (
     <ScreenContainer>
       <View style={styles.container}>
@@ -19,12 +46,14 @@ const ForgotPasswordScreen = ({ navigation }) => {
             label="Email"
             placeholder="Enter your email"
             keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
           />
           <Button
-            title="Send Reset Link"
-            onPress={() => {
-              // TODO: Implement password reset
-            }}
+            title={isLoading ? 'Sending...' : 'Send Reset Link'}
+            onPress={handleResetPassword}
+            disabled={isLoading}
           />
         </View>
         

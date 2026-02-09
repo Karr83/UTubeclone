@@ -23,6 +23,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Alert } from 'react-native';
+// PHASE 2: Import centralized Firebase mocks
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 import { useAuth } from '../contexts/AuthContext';

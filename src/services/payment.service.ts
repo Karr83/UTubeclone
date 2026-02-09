@@ -33,6 +33,7 @@
  * - User auth tokens required for all requests
  */
 
+/* PHASE 2: Firebase imports commented out
 import {
   collection,
   doc,
@@ -44,10 +45,23 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
+*/
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 
-import { db, auth } from '../config/firebase';
+// PHASE 3B: Import real Firebase functions
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  orderBy,
+  limit,
+  Timestamp,
+} from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { firestore, auth } from '../config/firebase';
 import { MembershipTier } from '../types/membership';
 import {
   UserSubscription,
@@ -159,7 +173,7 @@ export const DEFAULT_PRICING: PricingConfig = {
  */
 export async function getPricingConfig(): Promise<PricingConfig> {
   try {
-    const configRef = doc(db, 'config', 'pricing');
+    const configRef = doc(firestore, 'config', 'pricing');
     const configSnap = await getDoc(configRef);
     
     if (configSnap.exists()) {
@@ -373,7 +387,7 @@ export async function getCurrentSubscription(): Promise<UserSubscription | null>
   }
   
   try {
-    const userRef = doc(db, 'users', user.uid);
+    const userRef = doc(firestore, 'users', user.uid);
     const userSnap = await getDoc(userRef);
     
     if (!userSnap.exists()) {
@@ -469,7 +483,7 @@ export async function getPaymentHistory(
   }
   
   try {
-    const paymentsRef = collection(db, 'users', user.uid, 'payments');
+    const paymentsRef = collection(firestore, 'users', user.uid, 'payments');
     const paymentsQuery = query(
       paymentsRef,
       orderBy('createdAt', 'desc'),

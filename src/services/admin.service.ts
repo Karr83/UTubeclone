@@ -18,6 +18,7 @@
  * - Audit logs stored in /moderationLogs collection
  */
 
+/* PHASE 2: Firebase imports commented out
 import {
   collection,
   doc,
@@ -35,8 +36,28 @@ import {
   getCountFromServer,
   QueryConstraint,
 } from 'firebase/firestore';
+*/
 
+// PHASE 3B: Import real Firebase functions
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  updateDoc,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
+  serverTimestamp,
+  Timestamp,
+  getCountFromServer,
+  QueryConstraint,
+} from 'firebase/firestore';
 import { firestore } from '../config/firebase';
+
 import { UserProfile, UserRole } from '../types/auth';
 import { Content, ContentStatus } from '../types/content';
 import {
@@ -120,6 +141,9 @@ function docToAdminContent(docId: string, data: any): AdminContentView {
     moderationNotes: data.moderationNotes,
     reportCount: data.reportCount || 0,
     creator: data.creator,
+    // Boost fields
+    isBoosted: data.isBoosted || false,
+    boostLevel: data.boostLevel || 0,
   };
 }
 
@@ -208,7 +232,7 @@ export const adminService = {
       const q = query(collection(firestore, CONTENT_COLLECTION), ...constraints);
       const snapshot = await getDocs(q);
       
-      const items: AdminContentView[] = snapshot.docs.map((doc) =>
+      const items: AdminContentView[] = snapshot.docs.map((doc: any) =>
         docToAdminContent(doc.id, doc.data())
       );
       
@@ -452,7 +476,7 @@ export const adminService = {
       const q = query(collection(firestore, USERS_COLLECTION), ...constraints);
       const snapshot = await getDocs(q);
       
-      const items: AdminUserView[] = snapshot.docs.map((doc) =>
+      const items: AdminUserView[] = snapshot.docs.map((doc: any) =>
         docToAdminUser(doc.id, doc.data())
       );
       

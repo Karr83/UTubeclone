@@ -1,10 +1,99 @@
 // SettingsScreen - User/Creator settings
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert, Linking } from 'react-native';
 import { ScreenContainer, Header } from '../../components/layouts';
 import { Text, Button, Divider } from '../../components/common';
+import { useAuth } from '../../contexts/AuthContext';
 
 const SettingsScreen = ({ navigation }) => {
+  const { signOut } = useAuth();
+
+  const handleEditProfile = () => {
+    Alert.alert(
+      'Edit Profile',
+      'Profile editing will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleChangePassword = () => {
+    Alert.alert(
+      'Change Password',
+      'Password change feature will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleEmailPreferences = () => {
+    Alert.alert(
+      'Email Preferences',
+      'Email preferences will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handlePrivacySettings = () => {
+    Alert.alert(
+      'Privacy Settings',
+      'Privacy settings will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleBlockedUsers = () => {
+    Alert.alert(
+      'Blocked Users',
+      'Blocked users management will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleHelpCenter = () => {
+    Alert.alert(
+      'Help Center',
+      'Help center will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleContactSupport = () => {
+    Alert.alert(
+      'Contact Support',
+      'Would you like to contact support?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Email',
+          onPress: () => {
+            Linking.openURL('mailto:support@vibetube.com?subject=Support Request');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+              // Navigation will happen automatically via RootNavigator
+            } catch (error) {
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <ScreenContainer>
       <Header
@@ -18,25 +107,19 @@ const SettingsScreen = ({ navigation }) => {
         <Button
           title="Edit Profile"
           variant="secondary"
-          onPress={() => {
-            // TODO: Navigate to edit profile
-          }}
+          onPress={handleEditProfile}
           style={styles.menuItem}
         />
         <Button
           title="Change Password"
           variant="secondary"
-          onPress={() => {
-            // TODO: Navigate to change password
-          }}
+          onPress={handleChangePassword}
           style={styles.menuItem}
         />
         <Button
           title="Email Preferences"
           variant="secondary"
-          onPress={() => {
-            // TODO: Navigate to email settings
-          }}
+          onPress={handleEmailPreferences}
           style={styles.menuItem}
         />
       </View>
@@ -48,17 +131,13 @@ const SettingsScreen = ({ navigation }) => {
         <Button
           title="Privacy Settings"
           variant="secondary"
-          onPress={() => {
-            // TODO: Navigate to privacy settings
-          }}
+          onPress={handlePrivacySettings}
           style={styles.menuItem}
         />
         <Button
           title="Blocked Users"
           variant="secondary"
-          onPress={() => {
-            // TODO: Navigate to blocked users
-          }}
+          onPress={handleBlockedUsers}
           style={styles.menuItem}
         />
       </View>
@@ -70,17 +149,13 @@ const SettingsScreen = ({ navigation }) => {
         <Button
           title="Help Center"
           variant="secondary"
-          onPress={() => {
-            // TODO: Open help center
-          }}
+          onPress={handleHelpCenter}
           style={styles.menuItem}
         />
         <Button
           title="Contact Support"
           variant="secondary"
-          onPress={() => {
-            // TODO: Open support contact
-          }}
+          onPress={handleContactSupport}
           style={styles.menuItem}
         />
       </View>
@@ -89,9 +164,7 @@ const SettingsScreen = ({ navigation }) => {
       
       <Button
         title="Log Out"
-        onPress={() => {
-          // TODO: Implement logout
-        }}
+        onPress={handleLogout}
         style={styles.logoutButton}
       />
     </ScreenContainer>

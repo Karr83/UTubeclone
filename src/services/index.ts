@@ -6,6 +6,11 @@
  * 
  * USAGE:
  * import { authService, membershipService, contentService, adminService, boostService } from '@/services';
+ * 
+ * TODO Phase 3: Add offline sync service
+ * TODO Phase 3: Add push notification service
+ * TODO Phase 3: Add analytics/tracking service
+ * TODO Phase 3: Add crash reporting service
  */
 
 export { authService } from './auth.service';

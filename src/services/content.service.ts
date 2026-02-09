@@ -27,8 +27,14 @@
  * - Visibility field supports tier-gated content
  * - Content model includes revenue tracking placeholders
  * - Access control can check subscription status
+ * 
+ * TODO Phase 3: Add content caching with offline support
+ * TODO Phase 3: Add content recommendations algorithm
+ * TODO Phase 3: Add content compression/optimization pipeline
+ * TODO Phase 3: Add content analytics tracking
  */
 
+/* PHASE 2: Firebase imports commented out
 import {
   collection,
   doc,
@@ -53,7 +59,33 @@ import {
   deleteObject,
   UploadTask,
 } from 'firebase/storage';
+*/
 
+// PHASE 3B: Import real Firebase functions
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
+  serverTimestamp,
+  Timestamp,
+  QueryConstraint,
+} from 'firebase/firestore';
+import {
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+  deleteObject,
+  UploadTask,
+} from 'firebase/storage';
 import { firestore, storage } from '../config/firebase';
 import {
   Content,
@@ -184,6 +216,15 @@ export const contentService = {
     data: CreateContentData,
     onProgress?: (progress: UploadProgress) => void
   ): Promise<UploadResult> => {
+    // PHASE 3B: Return error if Firebase is not initialized
+    if (!firestore || !storage) {
+      console.log('⚠️ Firebase offline, cannot upload content');
+      return {
+        success: false,
+        error: 'Firebase not initialized. Please check your configuration.',
+      };
+    }
+
     // Generate unique content ID
     const contentId = generateContentId();
     
@@ -298,6 +339,11 @@ export const contentService = {
    */
   getContentById: async (contentId: string): Promise<Content | null> => {
     try {
+      if (!firestore) {
+        console.log('⚠️ Firebase offline, returning null for content ID:', contentId);
+        return null;
+      }
+
       const docRef = doc(firestore, CONTENT_COLLECTION, contentId);
       const docSnap = await getDoc(docRef);
       
@@ -324,7 +370,14 @@ export const contentService = {
   getPublicContent: async (
     options: ContentQueryOptions = {}
   ): Promise<ContentListResponse> => {
+    // PHASE 3B: Return empty list if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, returning empty public content');
+      return { items: [], hasMore: false };
+    }
+
     try {
+
       const constraints: QueryConstraint[] = [
         where('visibility', '==', 'public'),
         where('status', '==', 'published'),
@@ -354,8 +407,13 @@ export const contentService = {
         hasMore: items.length === (options.limit || 20),
         lastId: items.length > 0 ? items[items.length - 1].id : undefined,
       };
-    } catch (error) {
-      console.error('Error fetching public content:', error);
+    } catch (error: any) {
+      // PHASE 3B: Handle permission errors gracefully (Firestore rules not set up yet)
+      if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
+        console.log('⚠️ Firestore permissions not configured, using empty content');
+      } else {
+        console.error('Error fetching public content:', error);
+      }
       return { items: [], hasMore: false };
     }
   },
@@ -375,6 +433,11 @@ export const contentService = {
     options: ContentQueryOptions = {}
   ): Promise<ContentListResponse> => {
     try {
+      if (!firestore) {
+        console.log('⚠️ Firebase offline, returning empty creator content');
+        return { items: [], hasMore: false };
+      }
+
       const constraints: QueryConstraint[] = [
         where('creatorId', '==', creatorId),
         orderBy(options.orderBy || 'createdAt', options.orderDirection || 'desc'),
@@ -413,8 +476,13 @@ export const contentService = {
         hasMore: items.length === (options.limit || 20),
         lastId: items.length > 0 ? items[items.length - 1].id : undefined,
       };
-    } catch (error) {
-      console.error('Error fetching creator content:', error);
+    } catch (error: any) {
+      // PHASE 3B: Handle permission errors gracefully (Firestore rules not set up yet)
+      if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
+        console.log('⚠️ Firestore permissions not configured, using empty creator content');
+      } else {
+        console.error('Error fetching creator content:', error);
+      }
       return { items: [], hasMore: false };
     }
   },
@@ -431,6 +499,12 @@ export const contentService = {
   getMembersOnlyContent: async (
     options: ContentQueryOptions = {}
   ): Promise<ContentListResponse> => {
+    // PHASE 3B: Return empty list if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, returning empty members-only content');
+      return { items: [], hasMore: false };
+    }
+
     try {
       const constraints: QueryConstraint[] = [
         where('visibility', '==', 'membersOnly'),
@@ -460,8 +534,13 @@ export const contentService = {
         hasMore: items.length === (options.limit || 20),
         lastId: items.length > 0 ? items[items.length - 1].id : undefined,
       };
-    } catch (error) {
-      console.error('Error fetching members-only content:', error);
+    } catch (error: any) {
+      // PHASE 3B: Handle permission errors gracefully (Firestore rules not set up yet)
+      if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
+        console.log('⚠️ Firestore permissions not configured, using empty members-only content');
+      } else {
+        console.error('Error fetching members-only content:', error);
+      }
       return { items: [], hasMore: false };
     }
   },
@@ -476,6 +555,11 @@ export const contentService = {
     contentId: string,
     data: UpdateContentData
   ): Promise<void> => {
+    // PHASE 3B: Throw error if Firebase is not initialized
+    if (!firestore) {
+      throw new Error('Firebase not initialized. Please check your configuration.');
+    }
+
     try {
       const updateData: Record<string, any> = {
         ...data,
@@ -495,6 +579,11 @@ export const contentService = {
    * @param contentId - The content document ID
    */
   deleteContent: async (contentId: string): Promise<void> => {
+    // PHASE 3B: Throw error if Firebase is not initialized
+    if (!firestore) {
+      throw new Error('Firebase not initialized. Please check your configuration.');
+    }
+
     try {
       await updateDoc(doc(firestore, CONTENT_COLLECTION, contentId), {
         status: 'removed',
@@ -517,6 +606,11 @@ export const contentService = {
     contentId: string,
     storagePath: string
   ): Promise<void> => {
+    // PHASE 3B: Throw error if Firebase is not initialized
+    if (!firestore || !storage) {
+      throw new Error('Firebase not initialized. Please check your configuration.');
+    }
+
     try {
       // Delete from Firestore
       await deleteDoc(doc(firestore, CONTENT_COLLECTION, contentId));
@@ -537,6 +631,12 @@ export const contentService = {
    * @param contentId - The content document ID
    */
   incrementViewCount: async (contentId: string): Promise<void> => {
+    // PHASE 3B: Skip view count increment if Firebase is not initialized
+    if (!firestore) {
+      console.log('⚠️ Firebase offline, skipping view count increment');
+      return;
+    }
+
     try {
       const docRef = doc(firestore, CONTENT_COLLECTION, contentId);
       const docSnap = await getDoc(docRef);

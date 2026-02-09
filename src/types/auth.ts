@@ -3,9 +3,19 @@
  * 
  * This file defines all TypeScript interfaces and types related to
  * authentication, user profiles, and role-based access control.
+ * 
+ * PHASE 2: Firebase imports removed
  */
 
-import { User as FirebaseUser } from 'firebase/auth';
+// #region agent log
+console.log('[DEBUG-C] types/auth.ts module loading START');
+// #endregion
+
+// PHASE 2: Comment out Firebase import
+// import { User as FirebaseUser } from 'firebase/auth';
+
+// Mock type for Phase 2
+type FirebaseUser = any;
 
 // =============================================================================
 // USER ROLES

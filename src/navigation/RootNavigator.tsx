@@ -16,10 +16,14 @@
  * The auth state from AuthContext automatically protects routes.
  * When a user signs out, they're redirected to the Auth Stack.
  * When a user signs in, they're redirected to their role-appropriate stack.
+ * 
+ * TODO Phase 3: Add deep linking configuration
+ * TODO Phase 3: Add navigation analytics tracking
+ * TODO Phase 3: Add splash screen integration
  */
 
 import React from 'react';
-import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, Text, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 
 import { useAuth } from '../contexts/AuthContext';
@@ -28,6 +32,7 @@ import UserNavigator from './stacks/UserNavigator';
 import CreatorNavigator from './stacks/CreatorNavigator';
 import AdminNavigator from './stacks/AdminNavigator';
 import { UserRole } from '../types/auth';
+import { darkTheme } from '../theme';
 
 // =============================================================================
 // LOADING SCREEN
@@ -40,7 +45,7 @@ import { UserRole } from '../types/auth';
 function LoadingScreen(): JSX.Element {
   return (
     <View style={styles.loadingContainer}>
-      <ActivityIndicator size="large" color="#6366F1" />
+      <ActivityIndicator size="large" color="#FFFFFF" />
       <Text style={styles.loadingText}>Loading...</Text>
     </View>
   );
@@ -123,12 +128,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: darkTheme.semantic.background,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#6B7280',
+    color: darkTheme.semantic.textSecondary,
   },
 });
 

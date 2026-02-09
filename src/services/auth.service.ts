@@ -17,6 +17,11 @@
  * await authService.signUp('email@example.com', 'password', 'user');
  */
 
+// #region agent log
+console.log('[DEBUG-B] auth.service.ts module loading START');
+// #endregion
+
+// PHASE 3B: Real Firebase imports enabled
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -30,7 +35,6 @@ import {
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
-
 import { auth, firestore } from '../config/firebase';
 import { 
   UserProfile, 
@@ -81,6 +85,10 @@ export const authService = {
     password: string,
     role: UserRole
   ): Promise<UserCredential> => {
+    if (!auth || !firestore) {
+      throw new Error('Firebase not initialized. Please check your configuration.');
+    }
+
     try {
       // Step 1: Create Firebase Auth account
       const userCredential = await createUserWithEmailAndPassword(
@@ -121,6 +129,10 @@ export const authService = {
    * }
    */
   signIn: async (email: string, password: string): Promise<UserCredential> => {
+    if (!auth) {
+      throw new Error('Firebase not initialized. Please check your configuration.');
+    }
+
     try {
       const userCredential = await signInWithEmailAndPassword(
         auth,
@@ -147,6 +159,10 @@ export const authService = {
    * // User is now signed out, auth state will update automatically
    */
   signOut: async (): Promise<void> => {
+    if (!auth) {
+      throw new Error('Firebase not initialized. Please check your configuration.');
+    }
+
     try {
       await firebaseSignOut(auth);
     } catch (error: any) {
@@ -167,6 +183,11 @@ export const authService = {
    * }
    */
   getUserProfile: async (uid: string): Promise<UserProfile | null> => {
+    if (!firestore) {
+      console.error('Firestore not initialized - cannot fetch user profile');
+      return null;
+    }
+
     try {
       const userDoc = await getDoc(doc(firestore, USERS_COLLECTION, uid));
       
@@ -208,6 +229,10 @@ export const authService = {
  * @param data - The user profile data to store
  */
 async function createUserProfile(data: CreateUserProfileData): Promise<void> {
+  if (!firestore) {
+    throw new Error('Firestore not initialized. Please check your configuration.');
+  }
+
   const userRef = doc(firestore, USERS_COLLECTION, data.uid);
   
   await setDoc(userRef, {
@@ -232,6 +257,11 @@ async function createUserProfile(data: CreateUserProfileData): Promise<void> {
  * @param uid - The user's Firebase Auth UID
  */
 async function updateLastLogin(uid: string): Promise<void> {
+  if (!firestore) {
+    console.warn('Firestore not initialized - cannot update last login');
+    return;
+  }
+
   const userRef = doc(firestore, USERS_COLLECTION, uid);
   
   await setDoc(

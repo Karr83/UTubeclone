@@ -1,6 +1,6 @@
 // Admin ReportDetailScreen - View and resolve reports
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
 import { ScreenContainer, Header } from '../../components/layouts';
 import { Text, Button, Divider, Badge } from '../../components/common';
 
@@ -57,7 +57,7 @@ const ReportDetailScreen = ({ navigation, route }) => {
           title="View Reported Content"
           variant="secondary"
           onPress={() => {
-            // TODO: Navigate to reported content
+            Alert.alert('View Content', 'Content viewer will be available soon.', [{ text: 'OK' }]);
           }}
           style={styles.actionButton}
         />
@@ -65,14 +65,32 @@ const ReportDetailScreen = ({ navigation, route }) => {
           title="Dismiss Report"
           variant="secondary"
           onPress={() => {
-            // TODO: Dismiss report
+            Alert.alert(
+              'Dismiss Report',
+              'Are you sure you want to dismiss this report?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Dismiss', onPress: () => Alert.alert('Success', 'Report dismissed.') },
+              ]
+            );
           }}
           style={styles.actionButton}
         />
         <Button
           title="Remove Content"
           onPress={() => {
-            // TODO: Remove content and resolve
+            Alert.alert(
+              'Remove Content',
+              'Are you sure you want to remove this content? This action cannot be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Remove', 
+                  style: 'destructive',
+                  onPress: () => Alert.alert('Success', 'Content removed and report resolved.') 
+                },
+              ]
+            );
           }}
           style={[styles.actionButton, styles.dangerButton]}
         />

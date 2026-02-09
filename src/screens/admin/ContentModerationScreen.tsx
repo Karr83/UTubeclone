@@ -1,24 +1,14 @@
 /**
  * Content Moderation Screen
  * 
- * Admin screen for reviewing and moderating content.
+ * Admin screen for reviewing and moderating content queue.
+ * Supports approve, reject, and remove actions with reasons.
  * 
- * FEATURES:
- * - View pending content queue
- * - Approve/reject/remove content
- * - Filter by status
- * - View content details
+ * YouTube-style dark theme with queue management UI.
  * 
- * MODERATION WORKFLOW:
- * 1. New content appears with status 'pending'
- * 2. Admin reviews content details
- * 3. Admin takes action:
- *    - Approve → status becomes 'published'
- *    - Reject → status becomes 'rejected' (with reason)
- *    - Remove → status becomes 'removed' (for published content)
- * 
- * ACCESS CONTROL:
- * - Only accessible to users with role='admin'
+ * TODO Phase 3: Add bulk moderation actions
+ * TODO Phase 3: Add content preview modal
+ * TODO Phase 3: Add moderation history
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -30,10 +20,10 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
-  ActivityIndicator,
   Alert,
   Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { adminService } from '../../services/admin.service';
@@ -42,32 +32,59 @@ import {
   ModerationStatus,
   RejectionReason,
 } from '../../types/admin';
+import { LoadingView, ErrorView, EmptyState } from '../../components/common';
+import { darkTheme } from '../../theme';
 
 // =============================================================================
-// REJECTION REASONS
+// CONSTANTS
 // =============================================================================
 
-const REJECTION_REASONS: { key: RejectionReason; label: string }[] = [
-  { key: 'inappropriate_content', label: 'Inappropriate Content' },
-  { key: 'copyright_violation', label: 'Copyright Violation' },
-  { key: 'spam', label: 'Spam' },
-  { key: 'misleading', label: 'Misleading Content' },
-  { key: 'low_quality', label: 'Low Quality' },
-  { key: 'policy_violation', label: 'Policy Violation' },
-  { key: 'other', label: 'Other' },
+const REJECTION_REASONS: { key: RejectionReason; label: string; icon: string }[] = [
+  { key: 'inappropriate_content', label: 'Inappropriate Content', icon: '🚫' },
+  { key: 'copyright_violation', label: 'Copyright Violation', icon: '©️' },
+  { key: 'spam', label: 'Spam', icon: '📧' },
+  { key: 'misleading', label: 'Misleading Content', icon: '⚠️' },
+  { key: 'low_quality', label: 'Low Quality', icon: '📉' },
+  { key: 'policy_violation', label: 'Policy Violation', icon: '📜' },
+  { key: 'other', label: 'Other', icon: '📝' },
+];
+
+const STATUS_TABS: { key: ModerationStatus | 'all'; label: string; icon: string }[] = [
+  { key: 'pending', label: 'Pending', icon: '⏳' },
+  { key: 'published', label: 'Published', icon: '✅' },
+  { key: 'rejected', label: 'Rejected', icon: '❌' },
+  { key: 'removed', label: 'Removed', icon: '🗑️' },
+  { key: 'all', label: 'All', icon: '📋' },
 ];
 
 // =============================================================================
-// STATUS FILTER TABS
+// TAB COMPONENT
 // =============================================================================
 
-const STATUS_TABS: { key: ModerationStatus | 'all'; label: string }[] = [
-  { key: 'pending', label: 'Pending' },
-  { key: 'published', label: 'Published' },
-  { key: 'rejected', label: 'Rejected' },
-  { key: 'removed', label: 'Removed' },
-  { key: 'all', label: 'All' },
-];
+interface TabProps {
+  label: string;
+  icon: string;
+  isActive: boolean;
+  count?: number;
+  onPress: () => void;
+}
+
+function Tab({ label, icon, isActive, count, onPress }: TabProps) {
+  return (
+    <TouchableOpacity
+      style={[styles.tab, isActive && styles.tabActive]}
+      onPress={onPress}
+    >
+      <Text style={styles.tabIcon}>{icon}</Text>
+      <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{label}</Text>
+      {count !== undefined && count > 0 && (
+        <View style={[styles.tabBadge, isActive && styles.tabBadgeActive]}>
+          <Text style={[styles.tabBadgeText, isActive && styles.tabBadgeTextActive]}>{count}</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
 
 // =============================================================================
 // CONTENT CARD COMPONENT
@@ -75,112 +92,118 @@ const STATUS_TABS: { key: ModerationStatus | 'all'; label: string }[] = [
 
 interface ContentCardProps {
   content: AdminContentView;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
-  onRemove: (id: string) => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onRemove: () => void;
 }
 
-function ContentCard({
-  content,
-  onApprove,
-  onReject,
-  onRemove,
-}: ContentCardProps): JSX.Element {
-  const statusColors: Record<string, { bg: string; text: string }> = {
-    pending: { bg: '#FEF3C7', text: '#D97706' },
-    published: { bg: '#D1FAE5', text: '#059669' },
-    rejected: { bg: '#FEE2E2', text: '#DC2626' },
-    removed: { bg: '#F3F4F6', text: '#6B7280' },
+function ContentCard({ content, onApprove, onReject, onRemove }: ContentCardProps) {
+  const getStatusConfig = (status: ModerationStatus) => {
+    switch (status) {
+      case 'pending':
+        return { bg: 'rgba(245,158,11,0.15)', color: '#F59E0B', label: 'PENDING', icon: '⏳' };
+      case 'published':
+        return { bg: 'rgba(43,166,64,0.15)', color: '#2BA640', label: 'PUBLISHED', icon: '✅' };
+      case 'rejected':
+        return { bg: 'rgba(239,68,68,0.15)', color: '#EF4444', label: 'REJECTED', icon: '❌' };
+      case 'removed':
+        return { bg: 'rgba(113,113,113,0.15)', color: '#717171', label: 'REMOVED', icon: '🗑️' };
+      default:
+        return { bg: 'rgba(113,113,113,0.15)', color: '#717171', label: status.toUpperCase(), icon: '📄' };
+    }
   };
 
-  const statusStyle = statusColors[content.status] || statusColors.pending;
+  const statusConfig = getStatusConfig(content.status);
+
+  const formatDate = (date: Date) => {
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    
+    if (hours < 1) return 'Just now';
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
+  };
 
   return (
-    <View style={styles.card}>
-      {/* Media Preview */}
-      <View style={styles.cardMedia}>
-        {content.mediaUrl ? (
-          <Image
-            source={{ uri: content.thumbnailUrl || content.mediaUrl }}
-            style={styles.cardImage}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.cardPlaceholder}>
-            <Text style={styles.placeholderEmoji}>
-              {content.mediaType === 'video' ? '🎬' : '📷'}
+    <View style={styles.contentCard}>
+      {/* Thumbnail Row */}
+      <View style={styles.cardRow}>
+        <View style={styles.thumbWrap}>
+          {content.mediaUrl || content.thumbnailUrl ? (
+            <Image
+              source={{ uri: content.thumbnailUrl || content.mediaUrl }}
+              style={styles.thumb}
+            />
+          ) : (
+            <View style={styles.thumbPlaceholder}>
+              <Text style={styles.thumbEmoji}>
+                {content.mediaType === 'video' ? '🎬' : '📷'}
+              </Text>
+            </View>
+          )}
+          <View style={[styles.statusOverlay, { backgroundColor: statusConfig.bg }]}>
+            <Text style={[styles.statusOverlayText, { color: statusConfig.color }]}>
+              {statusConfig.icon} {statusConfig.label}
             </Text>
           </View>
-        )}
-        
-        {/* Status Badge */}
-        <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-          <Text style={[styles.statusText, { color: statusStyle.text }]}>
-            {content.status.toUpperCase()}
+        </View>
+
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle} numberOfLines={2}>{content.title}</Text>
+          
+          <View style={styles.metaRow}>
+            <View style={styles.metaChip}>
+              <Text style={styles.metaChipText}>{content.mediaType}</Text>
+            </View>
+            <View style={styles.metaChip}>
+              <Text style={styles.metaChipText}>{content.visibility}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.cardMeta}>
+            ID: {content.id.slice(0, 10)}... • {formatDate(content.createdAt)}
           </Text>
         </View>
       </View>
 
-      {/* Content Info */}
-      <View style={styles.cardInfo}>
-        <Text style={styles.cardTitle} numberOfLines={1}>
-          {content.title}
-        </Text>
+      {/* Rejection Info */}
+      {content.rejectionReason && (
+        <View style={styles.rejectionBox}>
+          <Text style={styles.rejectionLabel}>Rejection Reason:</Text>
+          <Text style={styles.rejectionReason}>
+            {REJECTION_REASONS.find(r => r.key === content.rejectionReason)?.icon}{' '}
+            {REJECTION_REASONS.find(r => r.key === content.rejectionReason)?.label || content.rejectionReason}
+          </Text>
+        </View>
+      )}
+
+      {/* Action Buttons */}
+      <View style={styles.actionsRow}>
+        {content.status === 'pending' && (
+          <>
+            <TouchableOpacity style={styles.approveButton} onPress={onApprove}>
+              <Text style={styles.approveButtonText}>✓ Approve</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.rejectButton} onPress={onReject}>
+              <Text style={styles.rejectButtonText}>✕ Reject</Text>
+            </TouchableOpacity>
+          </>
+        )}
         
-        <Text style={styles.cardMeta}>
-          {content.mediaType} • {content.visibility} • ID: {content.id.slice(0, 8)}...
-        </Text>
-
-        <Text style={styles.cardDate}>
-          Created: {content.createdAt.toLocaleDateString()}
-        </Text>
-
-        {content.rejectionReason && (
-          <View style={styles.rejectionInfo}>
-            <Text style={styles.rejectionLabel}>Rejection reason:</Text>
-            <Text style={styles.rejectionReason}>
-              {REJECTION_REASONS.find(r => r.key === content.rejectionReason)?.label || content.rejectionReason}
-            </Text>
-          </View>
+        {content.status === 'published' && (
+          <TouchableOpacity style={styles.removeButton} onPress={onRemove}>
+            <Text style={styles.removeButtonText}>🗑️ Remove</Text>
+          </TouchableOpacity>
         )}
 
-        {/* Action Buttons */}
-        <View style={styles.cardActions}>
-          {content.status === 'pending' && (
-            <>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.approveButton]}
-                onPress={() => onApprove(content.id)}
-              >
-                <Text style={styles.approveButtonText}>✓ Approve</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.rejectButton]}
-                onPress={() => onReject(content.id)}
-              >
-                <Text style={styles.rejectButtonText}>✕ Reject</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          
-          {content.status === 'published' && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.removeButton]}
-              onPress={() => onRemove(content.id)}
-            >
-              <Text style={styles.removeButtonText}>🗑️ Remove</Text>
-            </TouchableOpacity>
-          )}
-
-          {(content.status === 'rejected' || content.status === 'removed') && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.restoreButton]}
-              onPress={() => onApprove(content.id)}
-            >
-              <Text style={styles.restoreButtonText}>↻ Restore</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {(content.status === 'rejected' || content.status === 'removed') && (
+          <TouchableOpacity style={styles.restoreButton} onPress={onApprove}>
+            <Text style={styles.restoreButtonText}>↻ Restore & Publish</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -191,11 +214,8 @@ function ContentCard({
 // =============================================================================
 
 export default function ContentModerationScreen(): JSX.Element {
+  const insets = useSafeAreaInsets();
   const { user, profile } = useAuth();
-
-  // ---------------------------------------------------------------------------
-  // STATE
-  // ---------------------------------------------------------------------------
 
   const [content, setContent] = useState<AdminContentView[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -203,7 +223,7 @@ export default function ContentModerationScreen(): JSX.Element {
   const [activeTab, setActiveTab] = useState<ModerationStatus | 'all'>('pending');
   const [error, setError] = useState<string | null>(null);
 
-  // Rejection modal state
+  // Modal state
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
   const [selectedReason, setSelectedReason] = useState<RejectionReason | null>(null);
@@ -214,10 +234,7 @@ export default function ContentModerationScreen(): JSX.Element {
 
   const loadContent = useCallback(async () => {
     try {
-      const options = activeTab === 'all' 
-        ? {} 
-        : { moderationStatus: activeTab };
-      
+      const options = activeTab === 'all' ? {} : { moderationStatus: activeTab };
       const response = await adminService.getAllContent(options);
       setContent(response.items);
       setError(null);
@@ -248,7 +265,7 @@ export default function ContentModerationScreen(): JSX.Element {
 
     Alert.alert(
       'Approve Content',
-      'Are you sure you want to approve this content?',
+      'This content will be published and visible to users.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -256,7 +273,7 @@ export default function ContentModerationScreen(): JSX.Element {
           onPress: async () => {
             try {
               await adminService.approveContent(contentId, user.uid, profile.email);
-              Alert.alert('Success', 'Content approved successfully');
+              Alert.alert('Success', 'Content approved and published');
               loadContent();
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to approve content');
@@ -277,14 +294,9 @@ export default function ContentModerationScreen(): JSX.Element {
     if (!selectedContentId || !selectedReason || !user?.uid || !profile?.email) return;
 
     try {
-      await adminService.rejectContent(
-        selectedContentId,
-        user.uid,
-        profile.email,
-        selectedReason
-      );
+      await adminService.rejectContent(selectedContentId, user.uid, profile.email, selectedReason);
       setRejectModalVisible(false);
-      Alert.alert('Success', 'Content rejected');
+      Alert.alert('Content Rejected', 'The creator will be notified.');
       loadContent();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to reject content');
@@ -296,7 +308,7 @@ export default function ContentModerationScreen(): JSX.Element {
 
     Alert.alert(
       'Remove Content',
-      'Are you sure you want to remove this published content?',
+      'This will remove the content from public view.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -304,13 +316,8 @@ export default function ContentModerationScreen(): JSX.Element {
           style: 'destructive',
           onPress: async () => {
             try {
-              await adminService.removeContent(
-                contentId,
-                user.uid,
-                profile.email,
-                'policy_violation'
-              );
-              Alert.alert('Success', 'Content removed');
+              await adminService.removeContent(contentId, user.uid, profile.email, 'policy_violation');
+              Alert.alert('Content Removed', 'The creator will be notified.');
               loadContent();
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to remove content');
@@ -327,108 +334,100 @@ export default function ContentModerationScreen(): JSX.Element {
 
   if (profile?.role !== 'admin') {
     return (
-      <View style={styles.accessDenied}>
-        <Text style={styles.accessDeniedEmoji}>🚫</Text>
-        <Text style={styles.accessDeniedTitle}>Admin Access Only</Text>
+      <View style={[styles.accessDenied, { paddingTop: insets.top }]}>
+        <Text style={styles.accessDeniedEmoji}>🔒</Text>
+        <Text style={styles.accessDeniedTitle}>Admin Access Required</Text>
       </View>
     );
   }
 
   // ---------------------------------------------------------------------------
-  // RENDER EMPTY STATE
+  // COUNTS
   // ---------------------------------------------------------------------------
 
-  const renderEmptyState = () => {
-    if (isLoading) return null;
-
-    return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyEmoji}>
-          {activeTab === 'pending' ? '✅' : '📭'}
-        </Text>
-        <Text style={styles.emptyTitle}>
-          {activeTab === 'pending' ? 'All Caught Up!' : 'No Content'}
-        </Text>
-        <Text style={styles.emptyText}>
-          {activeTab === 'pending'
-            ? 'No content is waiting for review.'
-            : `No ${activeTab} content found.`}
-        </Text>
-      </View>
-    );
+  const getPendingCount = () => {
+    // Only show count for pending tab when on other tabs
+    if (activeTab === 'pending') return undefined;
+    return content.filter(c => c.status === 'pending').length;
   };
 
   // ---------------------------------------------------------------------------
   // RENDER
   // ---------------------------------------------------------------------------
 
+  if (isLoading) {
+    return <LoadingView fullScreen message="Loading content queue..." />;
+  }
+
+  if (error && content.length === 0) {
+    return <ErrorView error={error} onRetry={loadContent} fullScreen />;
+  }
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Content Moderation</Text>
-        <Text style={styles.subtitle}>
-          {content.length} item{content.length !== 1 ? 's' : ''}
-        </Text>
+        <Text style={styles.subtitle}>{content.length} items</Text>
       </View>
 
       {/* Status Tabs */}
-      <View style={styles.tabs}>
+      <View style={styles.tabsRow}>
         {STATUS_TABS.map((tab) => (
-          <TouchableOpacity
+          <Tab
             key={tab.key}
-            style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+            label={tab.label}
+            icon={tab.icon}
+            isActive={activeTab === tab.key}
+            count={tab.key === 'pending' ? getPendingCount() : undefined}
             onPress={() => setActiveTab(tab.key)}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === tab.key && styles.tabTextActive,
-              ]}
-            >
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
+          />
         ))}
       </View>
 
-      {/* Error Display */}
+      {/* Error Banner */}
       {error && (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>⚠️ {error}</Text>
         </View>
       )}
 
       {/* Content List */}
-      {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#DC2626" />
-        </View>
-      ) : (
-        <FlatList
-          data={content}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <ContentCard
-              content={item}
-              onApprove={handleApprove}
-              onReject={handleRejectPress}
-              onRemove={handleRemove}
-            />
-          )}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={handleRefresh}
-              tintColor="#DC2626"
-            />
-          }
-          ListEmptyComponent={renderEmptyState}
-        />
-      )}
+      <FlatList
+        data={content}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <ContentCard
+            content={item}
+            onApprove={() => handleApprove(item.id)}
+            onReject={() => handleRejectPress(item.id)}
+            onRemove={() => handleRemove(item.id)}
+          />
+        )}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor="#FFFFFF"
+            colors={['#FFFFFF']}
+          />
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon={activeTab === 'pending' ? '✅' : '📭'}
+            title={activeTab === 'pending' ? 'All Caught Up!' : 'No Content'}
+            message={
+              activeTab === 'pending'
+                ? 'No content is waiting for review.'
+                : `No ${activeTab} content found.`
+            }
+          />
+        }
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+      />
 
-      {/* Rejection Reason Modal */}
+      {/* Rejection Modal */}
       <Modal
         visible={rejectModalVisible}
         transparent
@@ -438,46 +437,32 @@ export default function ContentModerationScreen(): JSX.Element {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Rejection Reason</Text>
+            <Text style={styles.modalSubtitle}>The creator will be notified with this reason.</Text>
             
             {REJECTION_REASONS.map((reason) => (
               <TouchableOpacity
                 key={reason.key}
-                style={[
-                  styles.reasonOption,
-                  selectedReason === reason.key && styles.reasonOptionSelected,
-                ]}
+                style={[styles.reasonOption, selectedReason === reason.key && styles.reasonOptionSelected]}
                 onPress={() => setSelectedReason(reason.key)}
               >
-                <Text
-                  style={[
-                    styles.reasonText,
-                    selectedReason === reason.key && styles.reasonTextSelected,
-                  ]}
-                >
+                <Text style={styles.reasonIcon}>{reason.icon}</Text>
+                <Text style={[styles.reasonText, selectedReason === reason.key && styles.reasonTextSelected]}>
                   {reason.label}
                 </Text>
-                {selectedReason === reason.key && (
-                  <Text style={styles.reasonCheck}>✓</Text>
-                )}
+                {selectedReason === reason.key && <Text style={styles.reasonCheck}>✓</Text>}
               </TouchableOpacity>
             ))}
 
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => setRejectModalVisible(false)}
-              >
+              <TouchableOpacity style={styles.modalCancelButton} onPress={() => setRejectModalVisible(false)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.modalConfirmButton,
-                  !selectedReason && styles.modalButtonDisabled,
-                ]}
+                style={[styles.modalConfirmButton, !selectedReason && styles.modalButtonDisabled]}
                 onPress={handleRejectConfirm}
                 disabled={!selectedReason}
               >
-                <Text style={styles.modalConfirmText}>Reject</Text>
+                <Text style={styles.modalConfirmText}>Reject Content</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -494,271 +479,311 @@ export default function ContentModerationScreen(): JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: darkTheme.semantic.background,
   },
+
+  // Header
   header: {
-    padding: 24,
-    paddingTop: 60,
-    backgroundColor: '#DC2626',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: darkTheme.semantic.border,
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontWeight: '700',
+    color: darkTheme.semantic.text,
   },
   subtitle: {
     fontSize: 14,
-    color: '#FECACA',
-    marginTop: 4,
+    color: darkTheme.semantic.textSecondary,
+    marginTop: 2,
   },
 
   // Tabs
-  tabs: {
+  tabsRow: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    backgroundColor: darkTheme.semantic.surface,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     gap: 4,
-    flexWrap: 'wrap',
+    borderBottomWidth: 1,
+    borderBottomColor: darkTheme.semantic.border,
   },
   tab: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    gap: 4,
   },
   tabActive: {
-    backgroundColor: '#DC2626',
+    backgroundColor: 'rgba(239,68,68,0.15)',
+  },
+  tabIcon: {
+    fontSize: 12,
   },
   tabText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '500',
-    color: '#6B7280',
+    color: darkTheme.semantic.textSecondary,
   },
   tabTextActive: {
+    color: '#EF4444',
+    fontWeight: '600',
+  },
+  tabBadge: {
+    backgroundColor: 'rgba(245,158,11,0.2)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  tabBadgeActive: {
+    backgroundColor: '#F59E0B',
+  },
+  tabBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#F59E0B',
+  },
+  tabBadgeTextActive: {
     color: '#FFFFFF',
   },
 
   // List
   listContent: {
-    padding: 16,
-    gap: 16,
+    padding: 12,
+    paddingBottom: 100,
+  },
+  separator: {
+    height: 12,
   },
 
-  // Card
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+  // Content Card
+  contentCard: {
+    backgroundColor: darkTheme.semantic.surface,
+    borderRadius: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: darkTheme.semantic.border,
   },
-  cardMedia: {
-    width: '100%',
-    height: 160,
-    backgroundColor: '#1F2937',
+  cardRow: {
+    flexDirection: 'row',
+    padding: 12,
+  },
+  thumbWrap: {
+    width: 140,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: darkTheme.semantic.surfaceElevated,
     position: 'relative',
   },
-  cardImage: {
+  thumb: {
     width: '100%',
     height: '100%',
   },
-  cardPlaceholder: {
-    flex: 1,
+  thumbPlaceholder: {
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  placeholderEmoji: {
-    fontSize: 48,
+  thumbEmoji: {
+    fontSize: 28,
   },
-  statusBadge: {
+  statusOverlay: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    paddingHorizontal: 10,
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 8,
   },
-  statusText: {
-    fontSize: 11,
+  statusOverlayText: {
+    fontSize: 10,
     fontWeight: '700',
+    textAlign: 'center',
   },
   cardInfo: {
-    padding: 16,
+    flex: 1,
+    marginLeft: 12,
   },
   cardTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 4,
+    color: darkTheme.semantic.text,
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 6,
+  },
+  metaChip: {
+    backgroundColor: darkTheme.semantic.surfaceElevated,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+  },
+  metaChipText: {
+    fontSize: 11,
+    color: darkTheme.semantic.textSecondary,
+    textTransform: 'capitalize',
   },
   cardMeta: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  cardDate: {
-    fontSize: 12,
-    color: '#9CA3AF',
+    fontSize: 11,
+    color: darkTheme.semantic.textTertiary,
   },
 
-  // Rejection Info
-  rejectionInfo: {
-    backgroundColor: '#FEE2E2',
-    padding: 8,
-    borderRadius: 6,
-    marginTop: 8,
+  // Rejection Box
+  rejectionBox: {
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    marginHorizontal: 12,
+    marginBottom: 12,
+    padding: 10,
+    borderRadius: 8,
   },
   rejectionLabel: {
     fontSize: 11,
-    color: '#991B1B',
-    fontWeight: '500',
+    color: 'rgba(239,68,68,0.7)',
+    marginBottom: 2,
   },
   rejectionReason: {
     fontSize: 13,
-    color: '#DC2626',
     fontWeight: '600',
-    marginTop: 2,
+    color: '#EF4444',
   },
 
   // Actions
-  cardActions: {
+  actionsRow: {
     flexDirection: 'row',
+    padding: 12,
+    paddingTop: 0,
     gap: 8,
-    marginTop: 12,
   },
-  actionButton: {
+  approveButton: {
     flex: 1,
+    backgroundColor: 'rgba(43,166,64,0.15)',
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
   },
-  approveButton: {
-    backgroundColor: '#D1FAE5',
-  },
   approveButtonText: {
-    color: '#059669',
-    fontWeight: '600',
     fontSize: 14,
+    fontWeight: '600',
+    color: '#2BA640',
   },
   rejectButton: {
-    backgroundColor: '#FEE2E2',
-  },
-  rejectButtonText: {
-    color: '#DC2626',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  removeButton: {
-    backgroundColor: '#FEE2E2',
-  },
-  removeButtonText: {
-    color: '#DC2626',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  restoreButton: {
-    backgroundColor: '#DBEAFE',
-  },
-  restoreButtonText: {
-    color: '#2563EB',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-
-  // Loading
-  loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    paddingVertical: 10,
+    borderRadius: 8,
     alignItems: 'center',
   },
+  rejectButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#EF4444',
+  },
+  removeButton: {
+    flex: 1,
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  removeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#EF4444',
+  },
+  restoreButton: {
+    flex: 1,
+    backgroundColor: 'rgba(62,166,255,0.15)',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3EA6FF',
+  },
 
-  // Error
-  errorBox: {
-    backgroundColor: '#FEE2E2',
+  // Error Banner
+  errorBanner: {
+    backgroundColor: 'rgba(239,68,68,0.15)',
     padding: 12,
-    marginHorizontal: 16,
+    marginHorizontal: 12,
     marginTop: 8,
     borderRadius: 8,
   },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-
-  // Empty State
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 64,
-  },
-  emptyEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#6B7280',
+  errorBannerText: {
+    fontSize: 13,
+    color: '#EF4444',
     textAlign: 'center',
   },
 
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: darkTheme.semantic.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
-    maxHeight: '70%',
+    maxHeight: '75%',
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 16,
+    fontWeight: '700',
+    color: darkTheme.semantic.text,
     textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: darkTheme.semantic.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 20,
   },
   reasonOption: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#F9FAFB',
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: darkTheme.semantic.surfaceElevated,
     marginBottom: 8,
   },
   reasonOptionSelected: {
-    backgroundColor: '#FEE2E2',
-    borderWidth: 2,
-    borderColor: '#DC2626',
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  reasonIcon: {
+    fontSize: 18,
+    marginRight: 12,
   },
   reasonText: {
-    fontSize: 16,
-    color: '#374151',
+    flex: 1,
+    fontSize: 15,
+    color: darkTheme.semantic.text,
   },
   reasonTextSelected: {
-    color: '#DC2626',
+    color: '#EF4444',
     fontWeight: '600',
   },
   reasonCheck: {
-    fontSize: 18,
-    color: '#DC2626',
-    fontWeight: 'bold',
+    fontSize: 16,
+    color: '#EF4444',
+    fontWeight: '700',
   },
   modalActions: {
     flexDirection: 'row',
@@ -768,20 +793,20 @@ const styles = StyleSheet.create({
   modalCancelButton: {
     flex: 1,
     padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    backgroundColor: darkTheme.semantic.surfaceElevated,
     alignItems: 'center',
   },
   modalCancelText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6B7280',
+    color: darkTheme.semantic.textSecondary,
   },
   modalConfirmButton: {
     flex: 1,
     padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    backgroundColor: '#EF4444',
     alignItems: 'center',
   },
   modalButtonDisabled: {
@@ -798,17 +823,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
-    backgroundColor: '#F9FAFB',
+    padding: 32,
+    backgroundColor: darkTheme.semantic.background,
   },
   accessDeniedEmoji: {
     fontSize: 64,
     marginBottom: 16,
   },
   accessDeniedTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontSize: 22,
+    fontWeight: '700',
+    color: darkTheme.semantic.text,
+    textAlign: 'center',
   },
 });
-

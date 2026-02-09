@@ -40,6 +40,7 @@ import * as streamingService from '../../services/streaming.service';
 import { Recording } from '../../types/recording';
 import { Stream } from '../../types/streaming';
 import { UserProfile } from '../../types/auth';
+import { SmallVideoCard } from '../../components/video';
 
 // =============================================================================
 // TYPES
@@ -88,57 +89,11 @@ function formatDate(date: Date): string {
 }
 
 // =============================================================================
-// VIDEO CARD COMPONENT
+// HELPER: Format duration
 // =============================================================================
 
-interface VideoCardProps {
-  recording: Recording;
-  onPress: () => void;
-}
-
-function VideoCard({ recording, onPress }: VideoCardProps): JSX.Element {
-  return (
-    <TouchableOpacity style={styles.videoCard} onPress={onPress} activeOpacity={0.85}>
-      {/* Thumbnail */}
-      <View style={styles.videoThumbWrap}>
-        {recording.thumbnailUrl ? (
-          <Image
-            source={{ uri: recording.thumbnailUrl }}
-            style={styles.videoThumb}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.videoThumbFallback}>
-            <Text style={styles.videoThumbEmoji}>🎬</Text>
-          </View>
-        )}
-        
-        {/* Duration badge */}
-        <View style={styles.durationBadge}>
-          <Text style={styles.durationText}>
-            {recordingService.formatDuration(recording.durationSeconds)}
-          </Text>
-        </View>
-        
-        {/* Members badge */}
-        {recording.visibility === 'members' && (
-          <View style={styles.membersBadge}>
-            <Text style={styles.membersBadgeText}>🔒</Text>
-          </View>
-        )}
-      </View>
-      
-      {/* Info */}
-      <View style={styles.videoInfo}>
-        <Text style={styles.videoTitle} numberOfLines={2}>
-          {recording.title}
-        </Text>
-        <Text style={styles.videoMeta}>
-          {formatCount(recording.viewCount)} views • {formatDate(recording.createdAt)}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+function formatDuration(seconds: number): string {
+  return recordingService.formatDuration(seconds) || '0:00';
 }
 
 // =============================================================================
@@ -476,7 +431,15 @@ export default function CreatorProfileScreen(): JSX.Element {
           data={recordings}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <VideoCard recording={item} onPress={() => handleVideoPress(item)} />
+            <SmallVideoCard
+              thumbnailUrl={item.thumbnailUrl || ''}
+              title={item.title}
+              creatorName={creator?.displayName || creator?.email || 'Creator'}
+              duration={formatDuration(item.durationSeconds)}
+              views={formatCount(item.viewCount)}
+              timeAgo={formatDate(item.createdAt)}
+              onPress={() => handleVideoPress(item)}
+            />
           )}
           numColumns={2}
           columnWrapperStyle={styles.videoRow}

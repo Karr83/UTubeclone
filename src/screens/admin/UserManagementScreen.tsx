@@ -1,20 +1,14 @@
 /**
  * User Management Screen
  * 
- * Admin screen for managing users:
- * - View all users
- * - Suspend/unsuspend users
- * - Filter by role or status
- * - View user details
+ * Admin screen for managing users with table-like UI.
+ * Supports filtering, suspension/unsuspension actions.
  * 
- * SUSPENSION WORKFLOW:
- * 1. Admin selects user to suspend
- * 2. Admin chooses suspension reason
- * 3. User status changes to 'suspended'
- * 4. Suspended users cannot upload content
+ * YouTube-style dark theme with admin accent.
  * 
- * ACCESS CONTROL:
- * - Only accessible to users with role='admin'
+ * TODO Phase 3: Add user search
+ * TODO Phase 3: Add bulk actions
+ * TODO Phase 3: Add user detail modal
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -25,10 +19,10 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  ActivityIndicator,
   Alert,
   Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { adminService } from '../../services/admin.service';
@@ -38,170 +32,197 @@ import {
   UserStatus,
   SuspensionReason,
 } from '../../types/admin';
+import { LoadingView, ErrorView, EmptyState } from '../../components/common';
+import { darkTheme } from '../../theme';
 
 // =============================================================================
-// SUSPENSION REASONS
+// CONSTANTS
 // =============================================================================
 
-const SUSPENSION_REASONS: { key: SuspensionReason; label: string }[] = [
-  { key: 'policy_violation', label: 'Policy Violation' },
-  { key: 'inappropriate_content', label: 'Inappropriate Content' },
-  { key: 'harassment', label: 'Harassment' },
-  { key: 'spam', label: 'Spam' },
-  { key: 'fraudulent_activity', label: 'Fraudulent Activity' },
-  { key: 'multiple_violations', label: 'Multiple Violations' },
-  { key: 'other', label: 'Other' },
+const SUSPENSION_REASONS: { key: SuspensionReason; label: string; icon: string }[] = [
+  { key: 'policy_violation', label: 'Policy Violation', icon: '📜' },
+  { key: 'inappropriate_content', label: 'Inappropriate Content', icon: '🚫' },
+  { key: 'harassment', label: 'Harassment', icon: '😠' },
+  { key: 'spam', label: 'Spam', icon: '📧' },
+  { key: 'fraudulent_activity', label: 'Fraudulent Activity', icon: '💳' },
+  { key: 'multiple_violations', label: 'Multiple Violations', icon: '⚠️' },
+  { key: 'other', label: 'Other', icon: '📝' },
 ];
 
-// =============================================================================
-// FILTER OPTIONS
-// =============================================================================
-
-const ROLE_FILTERS: { key: UserRole | 'all'; label: string }[] = [
-  { key: 'all', label: 'All Roles' },
-  { key: 'user', label: 'Users' },
-  { key: 'creator', label: 'Creators' },
-  { key: 'admin', label: 'Admins' },
-];
-
-const STATUS_FILTERS: { key: UserStatus | 'all'; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'active', label: 'Active' },
-  { key: 'suspended', label: 'Suspended' },
-  { key: 'banned', label: 'Banned' },
-];
+type FilterRole = UserRole | 'all';
+type FilterStatus = UserStatus | 'all';
 
 // =============================================================================
-// USER CARD COMPONENT
+// FILTER CHIP COMPONENT
 // =============================================================================
 
-interface UserCardProps {
-  user: AdminUserView;
-  onSuspend: (userId: string) => void;
-  onUnsuspend: (userId: string) => void;
-  currentAdminId: string;
+interface FilterChipProps {
+  label: string;
+  isActive: boolean;
+  onPress: () => void;
+  count?: number;
 }
 
-function UserCard({
-  user,
-  onSuspend,
-  onUnsuspend,
-  currentAdminId,
-}: UserCardProps): JSX.Element {
-  const roleColors: Record<string, { bg: string; text: string }> = {
-    user: { bg: '#DBEAFE', text: '#1D4ED8' },
-    creator: { bg: '#E0E7FF', text: '#4338CA' },
-    admin: { bg: '#FEE2E2', text: '#DC2626' },
+function FilterChip({ label, isActive, onPress, count }: FilterChipProps) {
+  return (
+    <TouchableOpacity
+      style={[styles.filterChip, isActive && styles.filterChipActive]}
+      onPress={onPress}
+    >
+      <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+        {label}
+      </Text>
+      {count !== undefined && count > 0 && (
+        <View style={[styles.filterBadge, isActive && styles.filterBadgeActive]}>
+          <Text style={[styles.filterBadgeText, isActive && styles.filterBadgeTextActive]}>
+            {count}
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// =============================================================================
+// USER ROW COMPONENT
+// =============================================================================
+
+interface UserRowProps {
+  user: AdminUserView;
+  onSuspend: () => void;
+  onUnsuspend: () => void;
+  isCurrentAdmin: boolean;
+}
+
+function UserRow({ user, onSuspend, onUnsuspend, isCurrentAdmin }: UserRowProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  const getRoleBadge = (role: UserRole) => {
+    switch (role) {
+      case 'admin':
+        return { bg: 'rgba(239,68,68,0.15)', color: '#EF4444', label: 'Admin' };
+      case 'creator':
+        return { bg: 'rgba(145,71,255,0.15)', color: '#9147FF', label: 'Creator' };
+      default:
+        return { bg: 'rgba(62,166,255,0.15)', color: '#3EA6FF', label: 'User' };
+    }
   };
 
-  const statusColors: Record<string, { bg: string; text: string }> = {
-    active: { bg: '#D1FAE5', text: '#059669' },
-    suspended: { bg: '#FEF3C7', text: '#D97706' },
-    banned: { bg: '#FEE2E2', text: '#DC2626' },
+  const getStatusBadge = (status: UserStatus) => {
+    switch (status) {
+      case 'suspended':
+        return { bg: 'rgba(245,158,11,0.15)', color: '#F59E0B', label: 'Suspended' };
+      case 'banned':
+        return { bg: 'rgba(239,68,68,0.15)', color: '#EF4444', label: 'Banned' };
+      default:
+        return { bg: 'rgba(43,166,64,0.15)', color: '#2BA640', label: 'Active' };
+    }
   };
 
-  const roleStyle = roleColors[user.role] || roleColors.user;
-  const statusStyle = statusColors[user.status] || statusColors.active;
-
-  const isCurrentAdmin = user.uid === currentAdminId;
+  const roleBadge = getRoleBadge(user.role);
+  const statusBadge = getStatusBadge(user.status);
 
   return (
-    <View style={styles.card}>
-      {/* User Info */}
-      <View style={styles.cardHeader}>
-        <View style={styles.userAvatar}>
+    <View style={styles.userRow}>
+      {/* Main Row */}
+      <TouchableOpacity style={styles.userRowMain} onPress={() => setExpanded(!expanded)}>
+        {/* Avatar */}
+        <View style={[styles.avatar, user.role === 'admin' && styles.avatarAdmin]}>
           <Text style={styles.avatarText}>
             {user.email?.charAt(0).toUpperCase() || '?'}
           </Text>
         </View>
+
+        {/* Info */}
         <View style={styles.userInfo}>
-          <Text style={styles.userEmail} numberOfLines={1}>
-            {user.email}
-          </Text>
+          <View style={styles.userNameRow}>
+            <Text style={styles.userEmail} numberOfLines={1}>{user.email}</Text>
+            {isCurrentAdmin && (
+              <View style={styles.youBadge}>
+                <Text style={styles.youBadgeText}>YOU</Text>
+              </View>
+            )}
+          </View>
           {user.displayName && (
             <Text style={styles.userName}>{user.displayName}</Text>
           )}
           <Text style={styles.userId}>ID: {user.uid.slice(0, 12)}...</Text>
         </View>
-      </View>
 
-      {/* Badges */}
-      <View style={styles.badges}>
-        <View style={[styles.badge, { backgroundColor: roleStyle.bg }]}>
-          <Text style={[styles.badgeText, { color: roleStyle.text }]}>
-            {user.role.toUpperCase()}
-          </Text>
-        </View>
-        <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
-          <Text style={[styles.badgeText, { color: statusStyle.text }]}>
-            {user.status.toUpperCase()}
-          </Text>
-        </View>
-        {isCurrentAdmin && (
-          <View style={[styles.badge, { backgroundColor: '#F3F4F6' }]}>
-            <Text style={[styles.badgeText, { color: '#6B7280' }]}>YOU</Text>
+        {/* Badges */}
+        <View style={styles.badgesCol}>
+          <View style={[styles.badge, { backgroundColor: roleBadge.bg }]}>
+            <Text style={[styles.badgeText, { color: roleBadge.color }]}>{roleBadge.label}</Text>
           </View>
-        )}
-      </View>
-
-      {/* User Details */}
-      <View style={styles.cardDetails}>
-        <Text style={styles.detailText}>
-          Joined: {user.createdAt.toLocaleDateString()}
-        </Text>
-        {user.warningCount > 0 && (
-          <Text style={styles.warningText}>
-            ⚠️ Warnings: {user.warningCount}
-          </Text>
-        )}
-        {user.removedContentCount > 0 && (
-          <Text style={styles.removedText}>
-            🗑️ Removed content: {user.removedContentCount}
-          </Text>
-        )}
-      </View>
-
-      {/* Suspension Info */}
-      {user.status === 'suspended' && (
-        <View style={styles.suspensionInfo}>
-          <Text style={styles.suspensionTitle}>Suspension Details</Text>
-          {user.suspensionReason && (
-            <Text style={styles.suspensionText}>
-              Reason: {SUSPENSION_REASONS.find(r => r.key === user.suspensionReason)?.label}
-            </Text>
-          )}
-          {user.suspendedAt && (
-            <Text style={styles.suspensionText}>
-              Since: {user.suspendedAt.toLocaleDateString()}
-            </Text>
-          )}
-          {user.suspensionExpiresAt && (
-            <Text style={styles.suspensionText}>
-              Expires: {user.suspensionExpiresAt.toLocaleDateString()}
-            </Text>
-          )}
+          <View style={[styles.badge, { backgroundColor: statusBadge.bg }]}>
+            <View style={[styles.statusDot, { backgroundColor: statusBadge.color }]} />
+            <Text style={[styles.badgeText, { color: statusBadge.color }]}>{statusBadge.label}</Text>
+          </View>
         </View>
-      )}
 
-      {/* Action Buttons - Don't allow admins to suspend themselves */}
-      {!isCurrentAdmin && user.role !== 'admin' && (
-        <View style={styles.cardActions}>
-          {user.status === 'active' && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.suspendButton]}
-              onPress={() => onSuspend(user.uid)}
-            >
-              <Text style={styles.suspendButtonText}>⏸️ Suspend</Text>
-            </TouchableOpacity>
-          )}
-          
+        {/* Expand Arrow */}
+        <Text style={styles.expandArrow}>{expanded ? '▼' : '▶'}</Text>
+      </TouchableOpacity>
+
+      {/* Expanded Details */}
+      {expanded && (
+        <View style={styles.expandedContent}>
+          {/* Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Joined</Text>
+              <Text style={styles.statValue}>{user.createdAt.toLocaleDateString()}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Warnings</Text>
+              <Text style={[styles.statValue, user.warningCount > 0 && styles.statValueWarning]}>
+                {user.warningCount}
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Removed Content</Text>
+              <Text style={[styles.statValue, user.removedContentCount > 0 && styles.statValueDanger]}>
+                {user.removedContentCount}
+              </Text>
+            </View>
+          </View>
+
+          {/* Suspension Info */}
           {user.status === 'suspended' && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.unsuspendButton]}
-              onPress={() => onUnsuspend(user.uid)}
-            >
-              <Text style={styles.unsuspendButtonText}>▶️ Unsuspend</Text>
-            </TouchableOpacity>
+            <View style={styles.suspensionBox}>
+              <Text style={styles.suspensionTitle}>⚠️ Suspension Details</Text>
+              {user.suspensionReason && (
+                <Text style={styles.suspensionText}>
+                  Reason: {SUSPENSION_REASONS.find(r => r.key === user.suspensionReason)?.label}
+                </Text>
+              )}
+              {user.suspendedAt && (
+                <Text style={styles.suspensionText}>
+                  Since: {user.suspendedAt.toLocaleDateString()}
+                </Text>
+              )}
+              {user.suspensionExpiresAt && (
+                <Text style={styles.suspensionText}>
+                  Expires: {user.suspensionExpiresAt.toLocaleDateString()}
+                </Text>
+              )}
+            </View>
+          )}
+
+          {/* Action Buttons */}
+          {!isCurrentAdmin && user.role !== 'admin' && (
+            <View style={styles.actionsRow}>
+              {user.status === 'active' && (
+                <TouchableOpacity style={styles.suspendButton} onPress={onSuspend}>
+                  <Text style={styles.suspendButtonText}>⏸️ Suspend User</Text>
+                </TouchableOpacity>
+              )}
+              {user.status === 'suspended' && (
+                <TouchableOpacity style={styles.unsuspendButton} onPress={onUnsuspend}>
+                  <Text style={styles.unsuspendButtonText}>▶️ Unsuspend User</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
         </View>
       )}
@@ -214,20 +235,17 @@ function UserCard({
 // =============================================================================
 
 export default function UserManagementScreen(): JSX.Element {
+  const insets = useSafeAreaInsets();
   const { user, profile } = useAuth();
-
-  // ---------------------------------------------------------------------------
-  // STATE
-  // ---------------------------------------------------------------------------
 
   const [users, setUsers] = useState<AdminUserView[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
-  const [statusFilter, setStatusFilter] = useState<UserStatus | 'all'>('all');
+  const [roleFilter, setRoleFilter] = useState<FilterRole>('all');
+  const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [error, setError] = useState<string | null>(null);
 
-  // Suspension modal state
+  // Modal state
   const [suspendModalVisible, setSuspendModalVisible] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedReason, setSelectedReason] = useState<SuspensionReason | null>(null);
@@ -264,6 +282,18 @@ export default function UserManagementScreen(): JSX.Element {
   };
 
   // ---------------------------------------------------------------------------
+  // COUNTS
+  // ---------------------------------------------------------------------------
+
+  const getCounts = () => {
+    return {
+      all: users.length,
+      active: users.filter(u => u.status === 'active').length,
+      suspended: users.filter(u => u.status === 'suspended').length,
+    };
+  };
+
+  // ---------------------------------------------------------------------------
   // USER ACTIONS
   // ---------------------------------------------------------------------------
 
@@ -277,12 +307,7 @@ export default function UserManagementScreen(): JSX.Element {
     if (!selectedUserId || !selectedReason || !user?.uid || !profile?.email) return;
 
     try {
-      await adminService.suspendUser(
-        selectedUserId,
-        user.uid,
-        profile.email,
-        selectedReason
-      );
+      await adminService.suspendUser(selectedUserId, user.uid, profile.email, selectedReason);
       setSuspendModalVisible(false);
       Alert.alert('Success', 'User suspended successfully');
       loadUsers();
@@ -296,7 +321,7 @@ export default function UserManagementScreen(): JSX.Element {
 
     Alert.alert(
       'Unsuspend User',
-      'Are you sure you want to unsuspend this user?',
+      'Are you sure you want to restore this user\'s access?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -304,7 +329,7 @@ export default function UserManagementScreen(): JSX.Element {
           onPress: async () => {
             try {
               await adminService.unsuspendUser(userId, user.uid, profile.email);
-              Alert.alert('Success', 'User unsuspended successfully');
+              Alert.alert('Success', 'User access restored');
               loadUsers();
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to unsuspend user');
@@ -321,137 +346,95 @@ export default function UserManagementScreen(): JSX.Element {
 
   if (profile?.role !== 'admin') {
     return (
-      <View style={styles.accessDenied}>
-        <Text style={styles.accessDeniedEmoji}>🚫</Text>
-        <Text style={styles.accessDeniedTitle}>Admin Access Only</Text>
+      <View style={[styles.accessDenied, { paddingTop: insets.top }]}>
+        <Text style={styles.accessDeniedEmoji}>🔒</Text>
+        <Text style={styles.accessDeniedTitle}>Admin Access Required</Text>
       </View>
     );
   }
 
   // ---------------------------------------------------------------------------
-  // RENDER EMPTY STATE
-  // ---------------------------------------------------------------------------
-
-  const renderEmptyState = () => {
-    if (isLoading) return null;
-
-    return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyEmoji}>👥</Text>
-        <Text style={styles.emptyTitle}>No Users Found</Text>
-        <Text style={styles.emptyText}>
-          No users match the current filters.
-        </Text>
-      </View>
-    );
-  };
-
-  // ---------------------------------------------------------------------------
   // RENDER
   // ---------------------------------------------------------------------------
 
+  if (isLoading) {
+    return <LoadingView fullScreen message="Loading users..." />;
+  }
+
+  if (error && users.length === 0) {
+    return <ErrorView error={error} onRetry={loadUsers} fullScreen />;
+  }
+
+  const counts = getCounts();
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>User Management</Text>
-        <Text style={styles.subtitle}>
-          {users.length} user{users.length !== 1 ? 's' : ''}
-        </Text>
+        <Text style={styles.subtitle}>{users.length} users</Text>
       </View>
 
       {/* Filters */}
-      <View style={styles.filters}>
-        {/* Role Filter */}
-        <View style={styles.filterRow}>
-          <Text style={styles.filterLabel}>Role:</Text>
-          <View style={styles.filterOptions}>
-            {ROLE_FILTERS.map((filter) => (
-              <TouchableOpacity
-                key={filter.key}
-                style={[
-                  styles.filterChip,
-                  roleFilter === filter.key && styles.filterChipActive,
-                ]}
-                onPress={() => setRoleFilter(filter.key)}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    roleFilter === filter.key && styles.filterChipTextActive,
-                  ]}
-                >
-                  {filter.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+      <View style={styles.filtersSection}>
+        <View style={styles.filterGroup}>
+          <Text style={styles.filterLabel}>Role</Text>
+          <View style={styles.filterChips}>
+            <FilterChip label="All" isActive={roleFilter === 'all'} onPress={() => setRoleFilter('all')} />
+            <FilterChip label="Users" isActive={roleFilter === 'user'} onPress={() => setRoleFilter('user')} />
+            <FilterChip label="Creators" isActive={roleFilter === 'creator'} onPress={() => setRoleFilter('creator')} />
+            <FilterChip label="Admins" isActive={roleFilter === 'admin'} onPress={() => setRoleFilter('admin')} />
           </View>
         </View>
-
-        {/* Status Filter */}
-        <View style={styles.filterRow}>
-          <Text style={styles.filterLabel}>Status:</Text>
-          <View style={styles.filterOptions}>
-            {STATUS_FILTERS.map((filter) => (
-              <TouchableOpacity
-                key={filter.key}
-                style={[
-                  styles.filterChip,
-                  statusFilter === filter.key && styles.filterChipActive,
-                ]}
-                onPress={() => setStatusFilter(filter.key)}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    statusFilter === filter.key && styles.filterChipTextActive,
-                  ]}
-                >
-                  {filter.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        <View style={styles.filterGroup}>
+          <Text style={styles.filterLabel}>Status</Text>
+          <View style={styles.filterChips}>
+            <FilterChip label="All" isActive={statusFilter === 'all'} onPress={() => setStatusFilter('all')} count={counts.all} />
+            <FilterChip label="Active" isActive={statusFilter === 'active'} onPress={() => setStatusFilter('active')} count={counts.active} />
+            <FilterChip label="Suspended" isActive={statusFilter === 'suspended'} onPress={() => setStatusFilter('suspended')} count={counts.suspended} />
           </View>
         </View>
       </View>
 
-      {/* Error Display */}
+      {/* Error Banner */}
       {error && (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>⚠️ {error}</Text>
         </View>
       )}
 
       {/* User List */}
-      {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#DC2626" />
-        </View>
-      ) : (
-        <FlatList
-          data={users}
-          keyExtractor={(item) => item.uid}
-          renderItem={({ item }) => (
-            <UserCard
-              user={item}
-              onSuspend={handleSuspendPress}
-              onUnsuspend={handleUnsuspend}
-              currentAdminId={user?.uid || ''}
-            />
-          )}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={handleRefresh}
-              tintColor="#DC2626"
-            />
-          }
-          ListEmptyComponent={renderEmptyState}
-        />
-      )}
+      <FlatList
+        data={users}
+        keyExtractor={(item) => item.uid}
+        renderItem={({ item }) => (
+          <UserRow
+            user={item}
+            onSuspend={() => handleSuspendPress(item.uid)}
+            onUnsuspend={() => handleUnsuspend(item.uid)}
+            isCurrentAdmin={item.uid === user?.uid}
+          />
+        )}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor="#FFFFFF"
+            colors={['#FFFFFF']}
+          />
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon="👥"
+            title="No Users Found"
+            message="No users match the current filters."
+          />
+        }
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+      />
 
-      {/* Suspension Reason Modal */}
+      {/* Suspension Modal */}
       <Modal
         visible={suspendModalVisible}
         transparent
@@ -465,42 +448,27 @@ export default function UserManagementScreen(): JSX.Element {
             {SUSPENSION_REASONS.map((reason) => (
               <TouchableOpacity
                 key={reason.key}
-                style={[
-                  styles.reasonOption,
-                  selectedReason === reason.key && styles.reasonOptionSelected,
-                ]}
+                style={[styles.reasonOption, selectedReason === reason.key && styles.reasonOptionSelected]}
                 onPress={() => setSelectedReason(reason.key)}
               >
-                <Text
-                  style={[
-                    styles.reasonText,
-                    selectedReason === reason.key && styles.reasonTextSelected,
-                  ]}
-                >
+                <Text style={styles.reasonIcon}>{reason.icon}</Text>
+                <Text style={[styles.reasonText, selectedReason === reason.key && styles.reasonTextSelected]}>
                   {reason.label}
                 </Text>
-                {selectedReason === reason.key && (
-                  <Text style={styles.reasonCheck}>✓</Text>
-                )}
+                {selectedReason === reason.key && <Text style={styles.reasonCheck}>✓</Text>}
               </TouchableOpacity>
             ))}
 
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => setSuspendModalVisible(false)}
-              >
+              <TouchableOpacity style={styles.modalCancelButton} onPress={() => setSuspendModalVisible(false)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.modalConfirmButton,
-                  !selectedReason && styles.modalButtonDisabled,
-                ]}
+                style={[styles.modalConfirmButton, !selectedReason && styles.modalButtonDisabled]}
                 onPress={handleSuspendConfirm}
                 disabled={!selectedReason}
               >
-                <Text style={styles.modalConfirmText}>Suspend</Text>
+                <Text style={styles.modalConfirmText}>Suspend User</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -517,289 +485,330 @@ export default function UserManagementScreen(): JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: darkTheme.semantic.background,
   },
+
+  // Header
   header: {
-    padding: 24,
-    paddingTop: 60,
-    backgroundColor: '#DC2626',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: darkTheme.semantic.border,
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontWeight: '700',
+    color: darkTheme.semantic.text,
   },
   subtitle: {
     fontSize: 14,
-    color: '#FECACA',
-    marginTop: 4,
+    color: darkTheme.semantic.textSecondary,
+    marginTop: 2,
   },
 
   // Filters
-  filters: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
+  filtersSection: {
+    backgroundColor: darkTheme.semantic.surface,
+    padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: darkTheme.semantic.border,
   },
-  filterRow: {
-    marginBottom: 12,
-  },
-  filterLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
+  filterGroup: {
     marginBottom: 8,
   },
-  filterOptions: {
+  filterLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: darkTheme.semantic.textTertiary,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  filterChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
   },
   filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: darkTheme.youtube.chipBackground,
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+    gap: 6,
   },
   filterChipActive: {
-    backgroundColor: '#DC2626',
+    backgroundColor: darkTheme.youtube.chipActive,
   },
   filterChipText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#6B7280',
+    fontSize: 13,
+    color: darkTheme.semantic.text,
   },
   filterChipTextActive: {
-    color: '#FFFFFF',
+    color: darkTheme.youtube.chipActiveText,
+    fontWeight: '600',
+  },
+  filterBadge: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  filterBadgeActive: {
+    backgroundColor: 'rgba(0,0,0,0.15)',
+  },
+  filterBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: darkTheme.semantic.text,
+  },
+  filterBadgeTextActive: {
+    color: darkTheme.youtube.chipActiveText,
   },
 
   // List
   listContent: {
-    padding: 16,
-    gap: 12,
+    padding: 12,
+    paddingBottom: 100,
+  },
+  separator: {
+    height: 8,
   },
 
-  // Card
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  // User Row
+  userRow: {
+    backgroundColor: darkTheme.semantic.surface,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: darkTheme.semantic.border,
   },
-  cardHeader: {
+  userRowMain: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    padding: 12,
   },
-  userAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#6366F1',
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#3EA6FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+  },
+  avatarAdmin: {
+    backgroundColor: '#EF4444',
   },
   avatarText: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   userInfo: {
     flex: 1,
+    marginLeft: 12,
+  },
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   userEmail: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#1F2937',
+    color: darkTheme.semantic.text,
+    flex: 1,
+  },
+  youBadge: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  youBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: darkTheme.semantic.textSecondary,
   },
   userName: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 13,
+    color: darkTheme.semantic.textSecondary,
+    marginTop: 1,
   },
   userId: {
     fontSize: 11,
-    color: '#9CA3AF',
+    color: darkTheme.semantic.textTertiary,
     marginTop: 2,
   },
-
-  // Badges
-  badges: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
+  badgesCol: {
+    alignItems: 'flex-end',
+    gap: 4,
+    marginLeft: 8,
   },
   badge: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    gap: 4,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   badgeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
+  },
+  expandArrow: {
+    fontSize: 10,
+    color: darkTheme.semantic.textTertiary,
+    marginLeft: 8,
   },
 
-  // Details
-  cardDetails: {
-    marginBottom: 8,
+  // Expanded Content
+  expandedContent: {
+    backgroundColor: darkTheme.semantic.surfaceElevated,
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: darkTheme.semantic.border,
   },
-  detailText: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 2,
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 12,
   },
-  warningText: {
-    fontSize: 13,
-    color: '#D97706',
-    marginTop: 4,
+  statItem: {
+    alignItems: 'center',
   },
-  removedText: {
-    fontSize: 13,
-    color: '#DC2626',
+  statLabel: {
+    fontSize: 11,
+    color: darkTheme.semantic.textTertiary,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: darkTheme.semantic.text,
     marginTop: 2,
   },
-
-  // Suspension Info
-  suspensionInfo: {
-    backgroundColor: '#FEF3C7',
+  statValueWarning: {
+    color: '#F59E0B',
+  },
+  statValueDanger: {
+    color: '#EF4444',
+  },
+  suspensionBox: {
+    backgroundColor: 'rgba(245,158,11,0.1)',
     padding: 12,
     borderRadius: 8,
-    marginTop: 8,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   suspensionTitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#92400E',
-    marginBottom: 4,
+    color: '#F59E0B',
+    marginBottom: 6,
   },
   suspensionText: {
-    fontSize: 13,
-    color: '#B45309',
+    fontSize: 12,
+    color: 'rgba(245,158,11,0.8)',
     marginTop: 2,
   },
-
-  // Actions
-  cardActions: {
-    marginTop: 12,
+  actionsRow: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  actionButton: {
+  suspendButton: {
+    flex: 1,
+    backgroundColor: 'rgba(245,158,11,0.15)',
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
   },
-  suspendButton: {
-    backgroundColor: '#FEF3C7',
-  },
   suspendButtonText: {
-    color: '#D97706',
-    fontWeight: '600',
     fontSize: 14,
+    fontWeight: '600',
+    color: '#F59E0B',
   },
   unsuspendButton: {
-    backgroundColor: '#D1FAE5',
-  },
-  unsuspendButtonText: {
-    color: '#059669',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-
-  // Loading
-  loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: 'rgba(43,166,64,0.15)',
+    paddingVertical: 10,
+    borderRadius: 8,
     alignItems: 'center',
   },
+  unsuspendButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2BA640',
+  },
 
-  // Error
-  errorBox: {
-    backgroundColor: '#FEE2E2',
+  // Error Banner
+  errorBanner: {
+    backgroundColor: 'rgba(239,68,68,0.15)',
     padding: 12,
-    marginHorizontal: 16,
+    marginHorizontal: 12,
     marginTop: 8,
     borderRadius: 8,
   },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-
-  // Empty State
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 64,
-  },
-  emptyEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#6B7280',
+  errorBannerText: {
+    fontSize: 13,
+    color: '#EF4444',
     textAlign: 'center',
   },
 
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: darkTheme.semantic.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
-    maxHeight: '70%',
+    maxHeight: '75%',
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 16,
+    fontWeight: '700',
+    color: darkTheme.semantic.text,
+    marginBottom: 20,
     textAlign: 'center',
   },
   reasonOption: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#F9FAFB',
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: darkTheme.semantic.surfaceElevated,
     marginBottom: 8,
   },
   reasonOptionSelected: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 2,
-    borderColor: '#D97706',
+    backgroundColor: 'rgba(245,158,11,0.15)',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  reasonIcon: {
+    fontSize: 18,
+    marginRight: 12,
   },
   reasonText: {
-    fontSize: 16,
-    color: '#374151',
+    flex: 1,
+    fontSize: 15,
+    color: darkTheme.semantic.text,
   },
   reasonTextSelected: {
-    color: '#D97706',
+    color: '#F59E0B',
     fontWeight: '600',
   },
   reasonCheck: {
-    fontSize: 18,
-    color: '#D97706',
-    fontWeight: 'bold',
+    fontSize: 16,
+    color: '#F59E0B',
+    fontWeight: '700',
   },
   modalActions: {
     flexDirection: 'row',
@@ -809,20 +818,20 @@ const styles = StyleSheet.create({
   modalCancelButton: {
     flex: 1,
     padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    backgroundColor: darkTheme.semantic.surfaceElevated,
     alignItems: 'center',
   },
   modalCancelText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6B7280',
+    color: darkTheme.semantic.textSecondary,
   },
   modalConfirmButton: {
     flex: 1,
     padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#D97706',
+    borderRadius: 10,
+    backgroundColor: '#F59E0B',
     alignItems: 'center',
   },
   modalButtonDisabled: {
@@ -839,17 +848,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
-    backgroundColor: '#F9FAFB',
+    padding: 32,
+    backgroundColor: darkTheme.semantic.background,
   },
   accessDeniedEmoji: {
     fontSize: 64,
     marginBottom: 16,
   },
   accessDeniedTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontSize: 22,
+    fontWeight: '700',
+    color: darkTheme.semantic.text,
+    textAlign: 'center',
   },
 });
-

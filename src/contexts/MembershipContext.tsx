@@ -26,6 +26,11 @@
  * if (hasMinTier('pro')) {
  *   showPremiumFeatures();
  * }
+ * 
+ * TODO Phase 3: Add subscription management (pause, cancel, resume)
+ * TODO Phase 3: Add tier expiration reminders
+ * TODO Phase 3: Add promotional/trial tier support
+ * TODO Phase 3: Add family/team membership tiers
  */
 
 import React, {

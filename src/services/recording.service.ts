@@ -21,6 +21,7 @@
  * The webhook `asset.ready` signals when recording is available.
  */
 
+// PHASE 3B: Import real Firebase functions
 import {
   collection,
   doc,
@@ -41,8 +42,7 @@ import {
   Timestamp,
   Unsubscribe,
 } from 'firebase/firestore';
-
-import { db, auth } from '../config/firebase';
+import { firestore } from '../config/firebase';
 import {
   Recording,
   RecordingStatus,
@@ -96,7 +96,11 @@ export async function createRecording(data: CreateRecordingData): Promise<Record
     isHidden: false,
   };
   
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   await setDoc(recordingRef, {
     ...recording,
     streamStartedAt: Timestamp.fromDate(data.streamStartedAt),
@@ -112,7 +116,12 @@ export async function createRecording(data: CreateRecordingData): Promise<Record
  * Get a recording by ID.
  */
 export async function getRecording(recordingId: string): Promise<Recording | null> {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    console.log('⚠️ Firebase offline, returning null');
+    return null;
+  }
+
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   const snapshot = await getDoc(recordingRef);
   
   if (!snapshot.exists()) {
@@ -126,7 +135,11 @@ export async function getRecording(recordingId: string): Promise<Recording | nul
  * Get a recording by stream ID.
  */
 export async function getRecordingByStreamId(streamId: string): Promise<Recording | null> {
-  const recordingsRef = collection(db, RECORDING_COLLECTIONS.recordings);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingsRef = collection(firestore, RECORDING_COLLECTIONS.recordings);
   const q = query(
     recordingsRef,
     where('streamId', '==', streamId),
@@ -149,7 +162,11 @@ export async function updateRecording(
   recordingId: string,
   data: UpdateRecordingData
 ): Promise<void> {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   
   await updateDoc(recordingRef, {
     ...data,
@@ -165,7 +182,11 @@ export async function setRecordingProcessing(
   streamEndedAt: Date,
   durationSeconds: number
 ): Promise<void> {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   
   await updateDoc(recordingRef, {
     status: 'processing',
@@ -183,7 +204,11 @@ export async function setRecordingReady(
   recordingId: string,
   data: RecordingReadyData
 ): Promise<void> {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   
   await updateDoc(recordingRef, {
     status: 'ready',
@@ -206,7 +231,11 @@ export async function setRecordingFailed(
   recordingId: string,
   reason: string
 ): Promise<void> {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   
   await updateDoc(recordingRef, {
     status: 'failed',
@@ -223,7 +252,11 @@ export async function deleteRecording(
   deletedBy: string,
   reason?: string
 ): Promise<void> {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   
   await updateDoc(recordingRef, {
     status: 'deleted',
@@ -239,7 +272,11 @@ export async function deleteRecording(
  * Permanently delete a recording (admin only).
  */
 export async function permanentlyDeleteRecording(recordingId: string): Promise<void> {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   await deleteDoc(recordingRef);
 }
 
@@ -250,7 +287,11 @@ export async function hideRecording(
   recordingId: string,
   reason: string
 ): Promise<void> {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   
   await updateDoc(recordingRef, {
     isHidden: true,
@@ -263,7 +304,11 @@ export async function hideRecording(
  * Unhide a recording.
  */
 export async function unhideRecording(recordingId: string): Promise<void> {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   
   await updateDoc(recordingRef, {
     isHidden: false,
@@ -282,6 +327,11 @@ export async function unhideRecording(recordingId: string): Promise<void> {
 export async function getPublicRecordings(
   options: RecordingQueryOptions = {}
 ): Promise<RecordingListResponse> {
+  if (!firestore) {
+    console.log('⚠️ Firebase offline, returning empty recordings');
+    return { recordings: [], hasMore: false };
+  }
+
   const {
     limit: queryLimit = 20,
     sortBy = 'createdAt',
@@ -290,7 +340,7 @@ export async function getPublicRecordings(
   } = options;
   
   let q = query(
-    collection(db, RECORDING_COLLECTIONS.recordings),
+    collection(firestore, RECORDING_COLLECTIONS.recordings),
     where('status', '==', 'ready'),
     where('visibility', '==', 'public'),
     where('isDeleted', '==', false),
@@ -300,7 +350,7 @@ export async function getPublicRecordings(
   );
   
   if (cursor) {
-    const cursorDoc = await getDoc(doc(db, RECORDING_COLLECTIONS.recordings, cursor));
+    const cursorDoc = await getDoc(doc(firestore, RECORDING_COLLECTIONS.recordings, cursor));
     if (cursorDoc.exists()) {
       q = query(q, startAfter(cursorDoc));
     }
@@ -350,10 +400,14 @@ export async function getCreatorRecordings(
     constraints.unshift(where('isDeleted', '==', false));
   }
   
-  let q = query(collection(db, RECORDING_COLLECTIONS.recordings), ...constraints);
+  if (!firestore) {
+    return { recordings: [], hasMore: false };
+  }
+  
+  let q = query(collection(firestore, RECORDING_COLLECTIONS.recordings), ...constraints);
   
   if (cursor) {
-    const cursorDoc = await getDoc(doc(db, RECORDING_COLLECTIONS.recordings, cursor));
+    const cursorDoc = await getDoc(doc(firestore, RECORDING_COLLECTIONS.recordings, cursor));
     if (cursorDoc.exists()) {
       q = query(q, startAfter(cursorDoc));
     }
@@ -402,7 +456,11 @@ export async function getAllRecordings(
     constraints.unshift(where('isHidden', '==', false));
   }
   
-  const q = query(collection(db, RECORDING_COLLECTIONS.recordings), ...constraints);
+  if (!firestore) {
+    return { recordings: [], hasMore: false };
+  }
+  
+  const q = query(collection(firestore, RECORDING_COLLECTIONS.recordings), ...constraints);
   const snapshot = await getDocs(q);
   const recordings = snapshot.docs.map((d) => docToRecording(d.id, d.data()));
   
@@ -424,7 +482,11 @@ export function subscribeToRecording(
   recordingId: string,
   callback: (recording: Recording | null) => void
 ): Unsubscribe {
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   
   return onSnapshot(recordingRef, (snapshot) => {
     if (snapshot.exists()) {
@@ -442,8 +504,12 @@ export function subscribeToCreatorRecordings(
   creatorId: string,
   callback: (recordings: Recording[]) => void
 ): Unsubscribe {
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
   const q = query(
-    collection(db, RECORDING_COLLECTIONS.recordings),
+    collection(firestore, RECORDING_COLLECTIONS.recordings),
     where('creatorId', '==', creatorId),
     where('isDeleted', '==', false),
     orderBy('createdAt', 'desc'),
@@ -469,14 +535,18 @@ export async function trackView(
   viewerId?: string
 ): Promise<string> {
   // Increment view count
-  const recordingRef = doc(db, RECORDING_COLLECTIONS.recordings, recordingId);
+  if (!firestore) {
+    throw new Error('Firebase not initialized');
+  }
+  
+  const recordingRef = doc(firestore, RECORDING_COLLECTIONS.recordings, recordingId);
   await updateDoc(recordingRef, {
     viewCount: increment(1),
   });
   
   // Create playback session
   const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const sessionsRef = collection(db, RECORDING_COLLECTIONS.recordings, recordingId, 'sessions');
+  const sessionsRef = collection(firestore, RECORDING_COLLECTIONS.recordings, recordingId, 'sessions');
   
   await addDoc(sessionsRef, {
     id: sessionId,
@@ -500,8 +570,12 @@ export async function updatePlaybackProgress(
   watchDurationSeconds: number,
   completed: boolean = false
 ): Promise<void> {
+  if (!firestore) {
+    return;
+  }
+  
   // Find and update the session
-  const sessionsRef = collection(db, RECORDING_COLLECTIONS.recordings, recordingId, 'sessions');
+  const sessionsRef = collection(firestore, RECORDING_COLLECTIONS.recordings, recordingId, 'sessions');
   const q = query(sessionsRef, where('id', '==', sessionId), limit(1));
   const snapshot = await getDocs(q);
   

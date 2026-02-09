@@ -27,6 +27,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { AppButton } from '../../components/ui';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { useMembership } from '../../contexts/MembershipContext';
@@ -116,6 +117,9 @@ export default function UpgradeScreen(): JSX.Element {
   const { user } = useAuth();
   const { currentTier } = useMembership();
 
+  // PHASE 2: Ensure currentTier is valid, default to 'free' if undefined
+  const safeTier: MembershipTier = currentTier && TIER_INFO[currentTier] ? currentTier : 'free';
+
   // State
   const [pricing, setPricing] = useState<PricingConfig>(DEFAULT_PRICING);
   const [selectedInterval, setSelectedInterval] = useState<BillingInterval>('month');
@@ -142,7 +146,7 @@ export default function UpgradeScreen(): JSX.Element {
 
   // Handle tier selection / upgrade
   const handleSelectTier = async (tier: MembershipTier) => {
-    if (tier === currentTier || tier === 'free') return;
+    if (tier === safeTier || tier === 'free') return;
 
     if (!user) {
       Alert.alert('Sign In Required', 'Please sign in to upgrade your membership.');
@@ -181,6 +185,9 @@ export default function UpgradeScreen(): JSX.Element {
 
   // Get price for a tier
   const getTierPriceDisplay = (tier: MembershipTier): string => {
+    // PHASE 2: Check if pricing.tiers exists and has the tier
+    if (!pricing || !pricing.tiers || !pricing.tiers[tier]) return 'Free';
+    
     const tierPrice = pricing.tiers[tier];
     if (!tierPrice) return 'Free';
 
@@ -192,10 +199,10 @@ export default function UpgradeScreen(): JSX.Element {
   };
 
   // Check tier status
-  const isCurrentTier = (tier: MembershipTier) => tier === currentTier;
+  const isCurrentTier = (tier: MembershipTier) => tier === safeTier;
   const isUpgrade = (tier: MembershipTier) => {
     const order: MembershipTier[] = ['free', 'basic', 'pro', 'enterprise'];
-    return order.indexOf(tier) > order.indexOf(currentTier);
+    return order.indexOf(tier) > order.indexOf(safeTier);
   };
 
   // Loading state
@@ -248,7 +255,7 @@ export default function UpgradeScreen(): JSX.Element {
         {/* Current Plan Chip */}
         <View style={styles.currentPlanChip}>
           <Text style={styles.currentPlanLabel}>Current:</Text>
-          <Text style={styles.currentPlanValue}>{TIER_INFO[currentTier].name}</Text>
+          <Text style={styles.currentPlanValue}>{TIER_INFO[safeTier].name}</Text>
         </View>
 
         {/* Billing Toggle */}
@@ -329,23 +336,17 @@ export default function UpgradeScreen(): JSX.Element {
                   <Text style={styles.currentBtnText}>Current Plan</Text>
                 </View>
               ) : canUpgrade ? (
-                <TouchableOpacity
-                  style={[
-                    styles.upgradeBtn,
-                    { backgroundColor: info.color },
-                    isProcessing && styles.btnDisabled,
-                  ]}
+                <AppButton
+                  label={`Upgrade to ${info.name}`}
                   onPress={() => handleSelectTier(tier)}
+                  variant="primary"
                   disabled={isProcessing}
-                >
-                  {isProcessing ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.upgradeBtnText}>
-                      Upgrade to {info.name}
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                  loading={isProcessing}
+                  backgroundColor={info.color}
+                  textColor="#FFFFFF"
+                  fullWidth
+                  style={styles.upgradeBtnContainer}
+                />
               ) : (
                 <View style={styles.downgradeBtn}>
                   <Text style={styles.downgradeBtnText}>Contact support</Text>
@@ -356,18 +357,19 @@ export default function UpgradeScreen(): JSX.Element {
         })}
 
         {/* Manage Subscription */}
-        {currentTier !== 'free' && (
-          <TouchableOpacity
-            style={styles.manageBtn}
+        {safeTier !== 'free' && (
+          <AppButton
+            label="Manage Subscription"
             onPress={handleManageSubscription}
+            variant="secondary"
             disabled={isProcessing}
-          >
-            <Text style={styles.manageBtnText}>Manage Subscription</Text>
-          </TouchableOpacity>
+            fullWidth
+            style={styles.manageBtnContainer}
+          />
         )}
 
         {/* Trial Info */}
-        {pricing.trialEnabled && currentTier === 'free' && (
+        {pricing && pricing.trialEnabled && safeTier === 'free' && (
           <View style={styles.trialBanner}>
             <Text style={styles.trialText}>
               🎉 All paid plans include a {pricing.trialDays}-day free trial!
@@ -643,6 +645,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#3ea6ff',
+  },
+  manageBtnContainer: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+  },
+  upgradeBtnContainer: {
+    marginTop: 12,
   },
 
   // Trial Banner

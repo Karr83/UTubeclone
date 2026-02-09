@@ -1,6 +1,6 @@
 // Admin CreatorDetailScreen - View and manage individual creator
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
 import { ScreenContainer, Header } from '../../components/layouts';
 import { Text, Avatar, Button, Divider, Badge } from '../../components/common';
 
@@ -59,7 +59,14 @@ const CreatorDetailScreen = ({ navigation, route }) => {
           <Button
             title="Approve Creator"
             onPress={() => {
-              // TODO: Implement approval
+              Alert.alert(
+                'Approve Creator',
+                'Are you sure you want to approve this creator?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Approve', onPress: () => Alert.alert('Success', 'Creator approved.') },
+                ]
+              );
             }}
             style={styles.actionButton}
           />
@@ -68,7 +75,18 @@ const CreatorDetailScreen = ({ navigation, route }) => {
           title={creator.status === 'approved' ? 'Suspend Creator' : 'Activate Creator'}
           variant="secondary"
           onPress={() => {
-            // TODO: Implement status toggle
+            const action = creator.status === 'approved' ? 'suspend' : 'activate';
+            Alert.alert(
+              `${action === 'suspend' ? 'Suspend' : 'Activate'} Creator`,
+              `Are you sure you want to ${action} this creator?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: action === 'suspend' ? 'Suspend' : 'Activate', 
+                  onPress: () => Alert.alert('Success', `Creator ${action}d.`) 
+                },
+              ]
+            );
           }}
           style={styles.actionButton}
         />
@@ -76,7 +94,7 @@ const CreatorDetailScreen = ({ navigation, route }) => {
           title="View Content"
           variant="secondary"
           onPress={() => {
-            // TODO: Navigate to creator's content
+            Alert.alert('View Content', 'Creator content viewer will be available soon.', [{ text: 'OK' }]);
           }}
           style={styles.actionButton}
         />

@@ -1,25 +1,14 @@
 /**
  * Firebase Configuration
  * 
- * This file initializes Firebase services used throughout the app:
- * - Firebase Auth: User authentication
- * - Firestore: Database for user profiles and app data
- * - Firebase Storage: Media file uploads (images, videos)
- * 
- * SETUP INSTRUCTIONS:
- * 1. Go to https://console.firebase.google.com
- * 2. Create a new project or select existing one
- * 3. Add a Web app to your project
- * 4. Copy the firebaseConfig values below
- * 5. Enable Email/Password authentication in Firebase Console
- * 6. Create Firestore database in Firebase Console
- * 7. Enable Firebase Storage in Firebase Console
- * 
- * SECURITY NOTE:
- * In production, use environment variables for these values.
- * Create a .env file with EXPO_PUBLIC_ prefix for Expo projects.
+ * PHASE 2 UI-ONLY MODE: Firebase completely disabled
  */
 
+// #region agent log
+console.log('[DEBUG-A] firebase.ts module loading START');
+// #endregion
+
+// PHASE 3A: Firebase imports enabled
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -52,46 +41,60 @@ const firebaseConfig = {
 };
 
 // =============================================================================
-// FIREBASE INITIALIZATION
+// PHASE 2: UI-ONLY MODE - FIREBASE COMPLETELY DISABLED
 // =============================================================================
 
 /**
- * Initialize Firebase App.
- * Uses singleton pattern to prevent multiple initializations.
+ * PHASE 3A: Firebase is now enabled for authentication and backend services.
+ * Set to false to use real Firebase, true to use mock data.
  */
-let app: FirebaseApp;
 
-if (getApps().length === 0) {
-  app = initializeApp(firebaseConfig);
+const PHASE_2_UI_ONLY_MODE = false;
+
+// Check if Firebase is properly configured
+const isFirebaseConfigured = 
+  !PHASE_2_UI_ONLY_MODE &&
+  firebaseConfig.apiKey !== 'YOUR_API_KEY' &&
+  firebaseConfig.projectId !== 'YOUR_PROJECT_ID';
+
+// =============================================================================
+// FIREBASE INITIALIZATION
+// =============================================================================
+
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+let firestore: Firestore | null = null;
+let storage: FirebaseStorage | null = null;
+
+if (isFirebaseConfigured && !PHASE_2_UI_ONLY_MODE) {
+  // Initialize Firebase only if properly configured AND not in Phase 2 mode
+  if (getApps().length === 0) {
+    app = initializeApp(firebaseConfig);
+  } else {
+    app = getApp();
+  }
+
+  try {
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  } catch (error) {
+    // If auth is already initialized (hot reload), get existing instance
+    auth = getAuth(app);
+  }
+
+  firestore = getFirestore(app);
+  storage = getStorage(app);
+  
+  console.log('✅ Firebase initialized successfully');
 } else {
-  app = getApp();
+  // Phase 2 UI-only mode - Firebase completely disabled
+  console.log('⚠️ Firebase NOT initialized - check environment variables or PHASE_2_UI_ONLY_MODE flag');
+  app = null;
+  auth = null;
+  firestore = null;
+  storage = null;
 }
-
-/**
- * Initialize Firebase Auth with React Native persistence.
- * This ensures auth state persists across app restarts.
- */
-let auth: Auth;
-
-try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
-} catch (error) {
-  // If auth is already initialized (hot reload), get existing instance
-  auth = getAuth(app);
-}
-
-/**
- * Initialize Firestore database.
- */
-const firestore: Firestore = getFirestore(app);
-
-/**
- * Initialize Firebase Storage for media uploads.
- * Used for storing images and videos uploaded by creators.
- */
-const storage: FirebaseStorage = getStorage(app);
 
 // =============================================================================
 // EXPORTS

@@ -1,0 +1,404 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // =============================================================================
+    // HELPER FUNCTIONS
+    // =============================================================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Check if user is creator
+    function isCreator() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'creator';
+    }
+    
+    // Check if user owns the resource
+    function isOwner(creatorId) {
+      return isAuthenticated() && request.auth.uid == creatorId;
+    }
+    
+    // Check if user is moderator (creator of stream or admin)
+    function isModerator(streamCreatorId) {
+      return isAuthenticated() && 
+             (request.auth.uid == streamCreatorId || isAdmin());
+    }
+    
+    // =============================================================================
+    // USERS COLLECTION
+    // =============================================================================
+    
+    match /users/{userId} {
+      // Anyone can read user profiles (for public profiles)
+      allow read: if true;
+      
+      // Users can create their own profile during signup
+      // Users can update their own profile
+      // Admins can create/update any profile
+      allow create: if isAuthenticated() && 
+                    (request.auth.uid == userId || isAdmin());
+      
+      allow update: if isOwner(userId) || isAdmin();
+      
+      // Only admins can delete users
+      allow delete: if isAdmin();
+      
+      // =============================================================================
+      // PAYMENTS SUBCOLLECTION
+      // =============================================================================
+      
+      match /payments/{paymentId} {
+        // Users can read their own payment history
+        // Admins can read any payment history
+        allow read: if isAuthenticated() && 
+                    (request.auth.uid == userId || isAdmin());
+        
+        // Only system (Cloud Functions) can create payments
+        allow create: if false;
+        
+        // Only system can update payments
+        allow update: if false;
+        
+        // Only admins can delete payments
+        allow delete: if isAdmin();
+      }
+    }
+    
+    // =============================================================================
+    // CREATORS COLLECTION (for stream keys)
+    // =============================================================================
+    
+    match /creators/{creatorId} {
+      // Only the creator can read their own creator document
+      // Admins can read any creator document
+      allow read: if isOwner(creatorId) || isAdmin();
+      
+      // Only creators can create their own creator document
+      // Admins can create any creator document
+      allow create: if isAuthenticated() && 
+                    (request.auth.uid == creatorId || isAdmin());
+      
+      // Only creators can update their own creator document
+      // Admins can update any creator document
+      allow update: if isOwner(creatorId) || isAdmin();
+      
+      // Only admins can delete creator documents
+      allow delete: if isAdmin();
+      
+      // =============================================================================
+      // STREAM KEYS SUBCOLLECTION (SENSITIVE - creator only)
+      // =============================================================================
+      
+      match /streamKeys/{keyId} {
+        // Only the creator can read their own stream keys
+        // Admins can read any stream keys
+        allow read: if isOwner(creatorId) || isAdmin();
+        
+        // Only creators can create their own stream keys
+        // Admins can create any stream keys
+        allow create: if isAuthenticated() && 
+                      (request.auth.uid == creatorId || isAdmin());
+        
+        // Only creators can update their own stream keys
+        // Admins can update any stream keys
+        allow update: if isOwner(creatorId) || isAdmin();
+        
+        // Only creators can delete their own stream keys
+        // Admins can delete any stream keys
+        allow delete: if isOwner(creatorId) || isAdmin();
+      }
+    }
+    
+    // =============================================================================
+    // CONTENT COLLECTION
+    // =============================================================================
+    
+    match /content/{contentId} {
+      // Read rules:
+      // - Public content: Anyone can read
+      // - Content without visibility set: Anyone can read (defaults to public)
+      // - Members-only content: Only authenticated users
+      // - Own content: Creator can always read
+      // - Admins can read everything
+      allow read: if resource.data.visibility == 'public' 
+                  || resource.data.visibility == null
+                  || (isAuthenticated() && resource.data.visibility == 'membersOnly')
+                  || isOwner(resource.data.creatorId)
+                  || isAdmin();
+      
+      // Create: Only creators can create content
+      allow create: if isAuthenticated() 
+                    && request.resource.data.creatorId == request.auth.uid
+                    && (request.resource.data.visibility == 'public' || 
+                        request.resource.data.visibility == 'membersOnly' ||
+                        request.resource.data.visibility == null);
+      
+      // Update: Creators can update their own content, admins can update any
+      allow update: if isOwner(resource.data.creatorId) || isAdmin();
+      
+      // Delete: Creators can delete their own content, admins can delete any
+      allow delete: if isOwner(resource.data.creatorId) || isAdmin();
+    }
+    
+    // =============================================================================
+    // STREAMS COLLECTION
+    // =============================================================================
+    
+    match /streams/{streamId} {
+      // Anyone can read public streams (or streams without visibility set)
+      // Members-only streams require authentication
+      allow read: if resource.data.visibility == 'public' 
+                  || resource.data.visibility == null
+                  || (isAuthenticated() && resource.data.visibility == 'membersOnly')
+                  || isOwner(resource.data.creatorId)
+                  || isAdmin();
+      
+      // Create: Only creators can create streams
+      allow create: if isAuthenticated() 
+                    && request.resource.data.creatorId == request.auth.uid;
+      
+      // Update: Creators can update their own streams, admins can update any
+      allow update: if isOwner(resource.data.creatorId) || isAdmin();
+      
+      // Delete: Creators can delete their own streams, admins can delete any
+      allow delete: if isOwner(resource.data.creatorId) || isAdmin();
+      
+      // =============================================================================
+      // VIEWERS SUBCOLLECTION
+      // =============================================================================
+      
+      match /viewers/{viewerId} {
+        // Anyone can read viewer data (for analytics)
+        // Stream creator can read their own stream's viewers
+        // Admins can read any viewer data
+        allow read: if true;
+        
+        // Anyone can create viewer sessions (for tracking)
+        allow create: if true;
+        
+        // Anyone can update viewer sessions (for leave tracking)
+        allow update: if true;
+        
+        // Only system or admins can delete viewer sessions
+        allow delete: if isAdmin();
+      }
+      
+      // =============================================================================
+      // CHAT MESSAGES SUBCOLLECTION
+      // =============================================================================
+      
+      match /messages/{messageId} {
+        // Anyone can read messages in public streams
+        // Authenticated users can read messages in members-only streams
+        // Handle case where stream document might not exist yet
+        allow read: if !exists(/databases/$(database)/documents/streams/$(streamId))
+                    || get(/databases/$(database)/documents/streams/$(streamId)).data.visibility == 'public'
+                    || get(/databases/$(database)/documents/streams/$(streamId)).data.visibility == null
+                    || (isAuthenticated() && 
+                        get(/databases/$(database)/documents/streams/$(streamId)).data.visibility == 'membersOnly')
+                    || isAdmin();
+        
+        // Only authenticated users can create messages
+        allow create: if isAuthenticated() 
+                      && request.resource.data.userId == request.auth.uid;
+        
+        // Users can update their own messages, moderators/admins can update any
+        allow update: if isAuthenticated() && 
+                      (resource.data.userId == request.auth.uid || 
+                       isModerator(get(/databases/$(database)/documents/streams/$(streamId)).data.creatorId) ||
+                       isAdmin());
+        
+        // Users can delete their own messages, moderators/admins can delete any
+        allow delete: if isAuthenticated() && 
+                      (resource.data.userId == request.auth.uid || 
+                       isModerator(get(/databases/$(database)/documents/streams/$(streamId)).data.creatorId) ||
+                       isAdmin());
+      }
+      
+      // =============================================================================
+      // MUTES SUBCOLLECTION
+      // =============================================================================
+      
+      match /mutes/{muteId} {
+        // Only moderators and admins can read mutes
+        allow read: if isModerator(get(/databases/$(database)/documents/streams/$(streamId)).data.creatorId) 
+                    || isAdmin();
+        
+        // Only moderators and admins can create mutes
+        allow create: if isAuthenticated() && 
+                      (isModerator(get(/databases/$(database)/documents/streams/$(streamId)).data.creatorId) || 
+                       isAdmin());
+        
+        // Only moderators and admins can update mutes
+        allow update: if isAuthenticated() && 
+                      (isModerator(get(/databases/$(database)/documents/streams/$(streamId)).data.creatorId) || 
+                       isAdmin());
+        
+        // Only moderators and admins can delete mutes
+        allow delete: if isAuthenticated() && 
+                      (isModerator(get(/databases/$(database)/documents/streams/$(streamId)).data.creatorId) || 
+                       isAdmin());
+      }
+    }
+    
+    // =============================================================================
+    // RECORDINGS COLLECTION
+    // =============================================================================
+    
+    match /recordings/{recordingId} {
+      // Anyone can read public recordings (or recordings without visibility set)
+      // Members-only recordings require authentication
+      allow read: if resource.data.visibility == 'public' 
+                  || resource.data.visibility == null
+                  || (isAuthenticated() && resource.data.visibility == 'membersOnly')
+                  || isOwner(resource.data.creatorId)
+                  || isAdmin();
+      
+      // Create: Only via Cloud Functions (system)
+      allow create: if false;
+      
+      // Update: Creators can update their own recordings, admins can update any
+      allow update: if isOwner(resource.data.creatorId) || isAdmin();
+      
+      // Delete: Creators can delete their own recordings, admins can delete any
+      allow delete: if isOwner(resource.data.creatorId) || isAdmin();
+      
+      // =============================================================================
+      // PLAYBACK SESSIONS SUBCOLLECTION
+      // =============================================================================
+      
+      match /sessions/{sessionId} {
+        // Anyone can read playback sessions (for analytics)
+        allow read: if true;
+        
+        // Anyone can create playback sessions (for tracking)
+        allow create: if true;
+        
+        // Anyone can update playback sessions (for tracking)
+        allow update: if true;
+        
+        // Only admins can delete playback sessions
+        allow delete: if isAdmin();
+      }
+    }
+    
+    // =============================================================================
+    // CHAT BANS COLLECTION (Global bans)
+    // =============================================================================
+    
+    match /chatBans/{userId} {
+      // Only moderators and admins can read chat bans
+      allow read: if isAuthenticated() && (isCreator() || isAdmin());
+      
+      // Only moderators and admins can create chat bans
+      allow create: if isAuthenticated() && (isCreator() || isAdmin());
+      
+      // Only moderators and admins can update chat bans
+      allow update: if isAuthenticated() && (isCreator() || isAdmin());
+      
+      // Only moderators and admins can delete chat bans
+      allow delete: if isAuthenticated() && (isCreator() || isAdmin());
+    }
+    
+    // =============================================================================
+    // MODERATION LOGS COLLECTION
+    // =============================================================================
+    
+    match /moderationLogs/{logId} {
+      // Only admins can read moderation logs
+      allow read: if isAdmin();
+      
+      // Only authenticated users (moderators/admins) can create logs
+      allow create: if isAuthenticated();
+      
+      // Only admins can update logs
+      allow update: if isAdmin();
+      
+      // Only admins can delete logs
+      allow delete: if isAdmin();
+    }
+    
+    // =============================================================================
+    // CHAT COLLECTION (Legacy - may not be used)
+    // =============================================================================
+    
+    match /chat/{chatId} {
+      // Only authenticated users can read chats
+      allow read: if isAuthenticated();
+      
+      // Only authenticated users can create chats
+      allow create: if isAuthenticated();
+      
+      // Users can update their own messages, admins can update any
+      allow update: if isAuthenticated() && 
+                    (request.resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Users can delete their own messages, admins can delete any
+      allow delete: if isAuthenticated() && 
+                    (resource.data.userId == request.auth.uid || isAdmin());
+    }
+    
+    // =============================================================================
+    // SUBSCRIPTIONS COLLECTION
+    // =============================================================================
+    
+    match /subscriptions/{subscriptionId} {
+      // Users can read their own subscriptions
+      allow read: if isAuthenticated() && 
+                  (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Users can create their own subscriptions
+      allow create: if isAuthenticated() && 
+                    request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own subscriptions, admins can update any
+      allow update: if isAuthenticated() && 
+                    (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Users can delete their own subscriptions, admins can delete any
+      allow delete: if isAuthenticated() && 
+                    (resource.data.userId == request.auth.uid || isAdmin());
+    }
+    
+    // =============================================================================
+    // REPORTS COLLECTION (Admin only)
+    // =============================================================================
+    
+    match /reports/{reportId} {
+      // Only admins can read reports
+      allow read: if isAdmin();
+      
+      // Authenticated users can create reports
+      allow create: if isAuthenticated();
+      
+      // Only admins can update/delete reports
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // =============================================================================
+    // CONFIG COLLECTION (Read-only for all, write for admins)
+    // =============================================================================
+    
+    match /config/{configId} {
+      // Anyone can read config
+      allow read: if true;
+      
+      // Only admins can write config
+      allow write: if isAdmin();
+    }
+  }
+}

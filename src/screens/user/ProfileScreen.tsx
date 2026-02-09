@@ -12,7 +12,7 @@
  * - Sign out
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import {
   Alert,
   ScrollView,
   StatusBar,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -28,6 +29,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useMembership } from '../../contexts/MembershipContext';
 import { TierBadge, FeatureGate } from '../../components/gates';
+import { UserAvatar } from '../../components/user';
 
 // =============================================================================
 // COMPONENT
@@ -37,6 +39,9 @@ export default function ProfileScreen(): JSX.Element {
   const navigation = useNavigation<any>();
   const { profile, signOut, loading } = useAuth();
   const { tier, tierConfig, canAccess } = useMembership();
+  
+  // Local state for dark mode toggle
+  const [isDarkMode, setIsDarkMode] = useState(true);
 
   /**
    * Handle sign out with confirmation.
@@ -52,6 +57,133 @@ export default function ProfileScreen(): JSX.Element {
     );
   };
 
+  /**
+   * Handle notifications settings.
+   */
+  const handleNotifications = (): void => {
+    Alert.alert(
+      'Notifications',
+      'Notification settings will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  /**
+   * Handle privacy settings.
+   */
+  const handlePrivacy = (): void => {
+    Alert.alert(
+      'Privacy Settings',
+      'Privacy settings will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  /**
+   * Handle dark mode toggle.
+   */
+  const handleDarkMode = (): void => {
+    const newMode = !isDarkMode;
+    setIsDarkMode(newMode);
+    Alert.alert(
+      'Theme Changed',
+      `Dark mode is now ${newMode ? 'On' : 'Off'}. Full theme switching will be available in a future update.`,
+      [{ text: 'OK' }]
+    );
+  };
+
+  /**
+   * Handle language settings.
+   */
+  const handleLanguage = (): void => {
+    Alert.alert(
+      'Language Settings',
+      'Language selection will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  /**
+   * Handle help & support.
+   */
+  const handleHelpSupport = (): void => {
+    Alert.alert(
+      'Help & Support',
+      'Need help? Contact our support team.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Email Support',
+          onPress: () => {
+            Linking.openURL('mailto:support@vibetube.com?subject=Help Request');
+          },
+        },
+      ]
+    );
+  };
+
+  /**
+   * Handle terms of service.
+   */
+  const handleTermsOfService = (): void => {
+    Alert.alert(
+      'Terms of Service',
+      'View our terms of service?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'View',
+          onPress: () => {
+            // TODO: Navigate to terms screen or open URL
+            Alert.alert('Coming Soon', 'Terms of Service page will be available soon.');
+          },
+        },
+      ]
+    );
+  };
+
+  /**
+   * Handle privacy policy.
+   */
+  const handlePrivacyPolicy = (): void => {
+    Alert.alert(
+      'Privacy Policy',
+      'View our privacy policy?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'View',
+          onPress: () => {
+            // TODO: Navigate to privacy policy screen or open URL
+            Alert.alert('Coming Soon', 'Privacy Policy page will be available soon.');
+          },
+        },
+      ]
+    );
+  };
+
+  /**
+   * Handle edit profile.
+   */
+  const handleEditProfile = (): void => {
+    Alert.alert(
+      'Edit Profile',
+      'Profile editing will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  /**
+   * Handle change password.
+   */
+  const handleChangePassword = (): void => {
+    Alert.alert(
+      'Change Password',
+      'Password change feature will be available soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
@@ -64,11 +196,12 @@ export default function ProfileScreen(): JSX.Element {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarWrap}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {profile?.email?.[0]?.toUpperCase() || '?'}
-              </Text>
-            </View>
+            <UserAvatar
+              name={profile?.displayName || profile?.email}
+              size={72}
+              variant="large"
+              showBorder={true}
+            />
             {/* Online indicator */}
             <View style={styles.onlineIndicator} />
           </View>
@@ -155,13 +288,18 @@ export default function ProfileScreen(): JSX.Element {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Settings</Text>
           <View style={styles.settingsCard}>
-            <SettingsRow icon="🔔" label="Notifications" onPress={() => {}} />
-            <SettingsRow icon="🔒" label="Privacy" onPress={() => {}} />
-            <SettingsRow icon="🌙" label="Dark Mode" value="On" onPress={() => {}} />
-            <SettingsRow icon="🌐" label="Language" value="English" onPress={() => {}} />
-            <SettingsRow icon="❓" label="Help & Support" onPress={() => {}} />
-            <SettingsRow icon="📜" label="Terms of Service" onPress={() => {}} />
-            <SettingsRow icon="🛡️" label="Privacy Policy" onPress={() => {}} />
+            <SettingsRow icon="🔔" label="Notifications" onPress={handleNotifications} />
+            <SettingsRow icon="🔒" label="Privacy" onPress={handlePrivacy} />
+            <SettingsRow 
+              icon="🌙" 
+              label="Dark Mode" 
+              value={isDarkMode ? 'On' : 'Off'} 
+              onPress={handleDarkMode} 
+            />
+            <SettingsRow icon="🌐" label="Language" value="English" onPress={handleLanguage} />
+            <SettingsRow icon="❓" label="Help & Support" onPress={handleHelpSupport} />
+            <SettingsRow icon="📜" label="Terms of Service" onPress={handleTermsOfService} />
+            <SettingsRow icon="🛡️" label="Privacy Policy" onPress={handlePrivacyPolicy} />
           </View>
         </View>
 
@@ -172,12 +310,12 @@ export default function ProfileScreen(): JSX.Element {
             <SettingsRow 
               icon="✏️" 
               label="Edit Profile" 
-              onPress={() => {}} 
+              onPress={handleEditProfile} 
             />
             <SettingsRow 
               icon="🔑" 
               label="Change Password" 
-              onPress={() => {}} 
+              onPress={handleChangePassword} 
             />
           </View>
         </View>

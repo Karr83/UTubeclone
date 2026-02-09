@@ -27,6 +27,7 @@
  * - All moderation actions are logged
  */
 
+/* PHASE 2: Firebase imports commented out
 import {
   collection,
   doc,
@@ -45,8 +46,29 @@ import {
   Timestamp,
   Unsubscribe,
 } from 'firebase/firestore';
+*/
 
-import { db, auth } from '../config/firebase';
+// PHASE 3B: Import real Firebase functions
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
+  onSnapshot,
+  serverTimestamp,
+  Timestamp,
+  Unsubscribe,
+} from 'firebase/firestore';
+import { firestore, auth } from '../config/firebase';
 import {
   ChatMessage,
   SendMessageData,
@@ -98,7 +120,7 @@ export async function sendMessage(
   
   // Create message document
   const messagesRef = collection(
-    db,
+    firestore,
     'streams',
     data.streamId,
     CHAT_COLLECTIONS.messages
@@ -133,7 +155,7 @@ export async function getMessages(
 ): Promise<ChatMessage[]> {
   const { limit: queryLimit = 50, includeDeleted = false } = options;
   
-  const messagesRef = collection(db, 'streams', streamId, CHAT_COLLECTIONS.messages);
+  const messagesRef = collection(firestore, 'streams', streamId, CHAT_COLLECTIONS.messages);
   
   let q = query(
     messagesRef,
@@ -171,7 +193,7 @@ export function subscribeToMessages(
 ): Unsubscribe {
   const { limit: queryLimit = CHAT_CONFIG.MAX_MESSAGES_DISPLAY } = options;
   
-  const messagesRef = collection(db, 'streams', streamId, CHAT_COLLECTIONS.messages);
+  const messagesRef = collection(firestore, 'streams', streamId, CHAT_COLLECTIONS.messages);
   
   // Query for non-deleted messages, ordered by time
   const q = query(
@@ -208,7 +230,7 @@ export async function deleteMessage(
   reason?: string
 ): Promise<void> {
   const messageRef = doc(
-    db,
+    firestore,
     'streams',
     streamId,
     CHAT_COLLECTIONS.messages,
@@ -232,7 +254,7 @@ export async function getMessage(
   messageId: string
 ): Promise<ChatMessage | null> {
   const messageRef = doc(
-    db,
+    firestore,
     'streams',
     streamId,
     CHAT_COLLECTIONS.messages,
@@ -272,7 +294,7 @@ export async function muteUser(
   durationMinutes?: number
 ): Promise<StreamMute> {
   const muteRef = doc(
-    db,
+    firestore,
     'streams',
     streamId,
     CHAT_COLLECTIONS.mutes,
@@ -325,7 +347,7 @@ export async function unmuteUser(
   unmutedBy: string
 ): Promise<void> {
   const muteRef = doc(
-    db,
+    firestore,
     'streams',
     streamId,
     CHAT_COLLECTIONS.mutes,
@@ -357,7 +379,7 @@ export async function isUserMuted(
   userId: string
 ): Promise<boolean> {
   const muteRef = doc(
-    db,
+    firestore,
     'streams',
     streamId,
     CHAT_COLLECTIONS.mutes,
@@ -389,7 +411,7 @@ export async function isUserMuted(
  * Get all muted users in a stream.
  */
 export async function getMutedUsers(streamId: string): Promise<StreamMute[]> {
-  const mutesRef = collection(db, 'streams', streamId, CHAT_COLLECTIONS.mutes);
+  const mutesRef = collection(firestore, 'streams', streamId, CHAT_COLLECTIONS.mutes);
   const snapshot = await getDocs(mutesRef);
   
   const mutes: StreamMute[] = [];
@@ -435,7 +457,7 @@ export async function banUser(
   reason: string,
   durationDays?: number
 ): Promise<ChatBan> {
-  const banRef = doc(db, CHAT_COLLECTIONS.chatBans, targetUserId);
+  const banRef = doc(firestore, CHAT_COLLECTIONS.chatBans, targetUserId);
   
   const expiresAt = durationDays
     ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000)
@@ -477,7 +499,7 @@ export async function unbanUser(
   targetUserId: string,
   unbannedBy: string
 ): Promise<void> {
-  const banRef = doc(db, CHAT_COLLECTIONS.chatBans, targetUserId);
+  const banRef = doc(firestore, CHAT_COLLECTIONS.chatBans, targetUserId);
   
   // Get ban info for logging
   const banSnap = await getDoc(banRef);
@@ -501,7 +523,7 @@ export async function unbanUser(
  * Check if a user is banned from chat.
  */
 export async function isUserBanned(userId: string): Promise<boolean> {
-  const banRef = doc(db, CHAT_COLLECTIONS.chatBans, userId);
+  const banRef = doc(firestore, CHAT_COLLECTIONS.chatBans, userId);
   const banSnap = await getDoc(banRef);
   
   if (!banSnap.exists()) {
@@ -651,7 +673,7 @@ export async function getChatPermissions(
  * Log a moderation action.
  */
 async function logModerationAction(data: Omit<ModerationLogEntry, 'id' | 'timestamp'>): Promise<void> {
-  const logsRef = collection(db, CHAT_COLLECTIONS.moderationLogs);
+  const logsRef = collection(firestore, CHAT_COLLECTIONS.moderationLogs);
   
   await addDoc(logsRef, {
     ...data,

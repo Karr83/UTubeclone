@@ -24,7 +24,16 @@
  * // In a component
  * const { user, role, signOut } = useAuth();
  * if (role === 'admin') { ... }
+ * 
+ * TODO Phase 3: Add social auth providers (Google, Apple)
+ * TODO Phase 3: Add password reset flow
+ * TODO Phase 3: Add email verification
+ * TODO Phase 3: Add biometric authentication
  */
+
+// #region agent log
+console.log('[DEBUG-C] AuthContext.tsx module loading START');
+// #endregion
 
 import React, {
   createContext,
@@ -35,8 +44,9 @@ import React, {
   useMemo,
   ReactNode,
 } from 'react';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
+// PHASE 3B: Firebase imports enabled for real authentication
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { authService } from '../services/auth.service';
 import {
@@ -47,19 +57,11 @@ import {
 } from '../types/auth';
 
 // =============================================================================
-// DEMO MODE - Set to true to bypass Firebase auth and see the UI
+// PHASE 2: UI-ONLY MODE - Mock user for testing UI without Firebase
 // =============================================================================
-const DEMO_MODE = true;
 
-// Mock user for demo mode - change role to 'creator' or 'admin' to test different views
-const DEMO_USER: UserProfile = {
-  uid: 'demo-user-123',
-  email: 'demo@example.com',
-  role: 'user' as UserRole, // Change to 'creator' or 'admin' to test other roles
-  status: 'active',
-  createdAt: new Date(),
-  displayName: 'Demo User',
-};
+// PHASE 3B: UI-ONLY MODE disabled - using real Firebase Auth
+// Mock user removed - authentication now handled by Firebase
 
 // =============================================================================
 // CONTEXT CREATION
@@ -108,21 +110,16 @@ export function AuthProvider({ children }: AuthProviderProps): JSX.Element {
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    // DEMO MODE: Skip Firebase auth and use mock user
-    if (DEMO_MODE) {
-      console.log('🎭 DEMO MODE ACTIVE - Using mock user');
-      setProfile(DEMO_USER);
-      setUser({ uid: DEMO_USER.uid, email: DEMO_USER.email } as FirebaseUser);
+    // PHASE 3B: Defensive check - if auth is not initialized, show loading state
+    if (!auth) {
+      console.warn('⚠️ Firebase Auth not initialized - check Firebase configuration');
       setLoading(false);
       return;
     }
 
     /**
      * Subscribe to Firebase Auth state changes.
-     * This fires:
-     * - Immediately with current auth state
-     * - Whenever user signs in or out
-     * - When the app is opened (checks persisted auth)
+     * This listener automatically updates when user signs in/out.
      */
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
@@ -159,10 +156,6 @@ export function AuthProvider({ children }: AuthProviderProps): JSX.Element {
    */
   const signUp = useCallback(
     async (email: string, password: string, role: UserRole): Promise<void> => {
-      if (DEMO_MODE) {
-        console.log('🎭 DEMO MODE: Sign up simulated');
-        return;
-      }
       setLoading(true);
       try {
         await authService.signUp(email, password, role);
@@ -179,10 +172,6 @@ export function AuthProvider({ children }: AuthProviderProps): JSX.Element {
    */
   const signIn = useCallback(
     async (email: string, password: string): Promise<void> => {
-      if (DEMO_MODE) {
-        console.log('🎭 DEMO MODE: Sign in simulated');
-        return;
-      }
       setLoading(true);
       try {
         await authService.signIn(email, password);
@@ -198,10 +187,6 @@ export function AuthProvider({ children }: AuthProviderProps): JSX.Element {
    * Sign out the current user.
    */
   const signOut = useCallback(async (): Promise<void> => {
-    if (DEMO_MODE) {
-      console.log('🎭 DEMO MODE: Sign out simulated (staying logged in for demo)');
-      return;
-    }
     setLoading(true);
     try {
       await authService.signOut();

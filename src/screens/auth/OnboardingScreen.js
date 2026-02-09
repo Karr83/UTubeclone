@@ -9,7 +9,7 @@ const OnboardingScreen = ({ navigation }) => {
     <ScreenContainer>
       <View style={styles.container}>
         <View style={styles.content}>
-          <Text variant="h1" style={styles.title}>MS Gift</Text>
+          <Text variant="h1" style={styles.title}>VibeTube</Text>
           <Text variant="body" style={styles.description}>
             Discover exclusive content from your favorite creators
           </Text>

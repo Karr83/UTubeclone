@@ -27,6 +27,7 @@ import { useMembership } from '../../contexts/MembershipContext';
 import { TierBadge } from '../../components/gates';
 import { getAllTiers, getYearlySavingsPercent } from '../../constants/membership';
 import { MembershipTier, TierConfig } from '../../types/membership';
+import { AppButton } from '../../components/ui';
 
 // =============================================================================
 // COMPONENT
@@ -112,14 +113,15 @@ export default function MembershipScreen(): JSX.Element {
             <Text style={styles.disabledBtnText}>Lower Tier</Text>
           </View>
         ) : (
-          <TouchableOpacity
-            style={[styles.upgradeBtn, { backgroundColor: config.badgeColor }]}
+          <AppButton
+            label={`Upgrade to ${config.name}`}
             onPress={() => handleUpgrade(config.id)}
-          >
-            <Text style={styles.upgradeBtnText}>
-              Upgrade to {config.name}
-            </Text>
-          </TouchableOpacity>
+            variant="primary"
+            backgroundColor={config.badgeColor}
+            textColor="#FFFFFF"
+            fullWidth
+            style={styles.upgradeBtnContainer}
+          />
         )}
       </View>
     );
@@ -433,6 +435,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  upgradeBtnContainer: {
+    marginTop: 12,
   },
   currentPlanBtn: {
     backgroundColor: '#272727',
