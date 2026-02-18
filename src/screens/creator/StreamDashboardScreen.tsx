@@ -18,7 +18,7 @@
  * TODO Phase 3: Add stream schedule feature
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -31,6 +31,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 
 import { useStream } from '../../hooks/useStream';
 import { LoadingView } from '../../components/common';
@@ -148,6 +149,7 @@ function ModeSelector({ mode, onSelect }: ModeSelectorProps) {
 // =============================================================================
 
 export default function StreamDashboardScreen(): JSX.Element {
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const {
     currentStream,
@@ -244,7 +246,10 @@ export default function StreamDashboardScreen(): JSX.Element {
           <Text style={styles.errorText}>
             Upgrade to Basic tier or higher to unlock live streaming.
           </Text>
-          <TouchableOpacity style={styles.upgradeButton}>
+          <TouchableOpacity
+            style={styles.upgradeButton}
+            onPress={() => navigation.navigate('ProfileTab', { screen: 'Upgrade' })}
+          >
             <Text style={styles.upgradeButtonText}>Upgrade Now</Text>
           </TouchableOpacity>
         </View>

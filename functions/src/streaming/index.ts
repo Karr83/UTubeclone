@@ -36,7 +36,7 @@ const db = admin.firestore();
  * NEVER in source code or client-side.
  */
 const LIVEPEER_CONFIG = {
-  apiKey: functions.config().livepeer?.api_key || process.env.LIVEPEER_API_KEY || '',
+  apiKey: process.env.LIVEPEER_API_KEY || '',
   apiBaseUrl: 'https://livepeer.studio/api',
   rtmpBaseUrl: 'rtmp://rtmp.livepeer.com/live',
   playbackBaseUrl: 'https://livepeercdn.studio/hls',

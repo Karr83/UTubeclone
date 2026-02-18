@@ -1,5 +1,5 @@
 // Admin CreatorDetailScreen - View and manage individual creator
-import React from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import { ScreenContainer, Header } from '../../components/layouts';
 import { Text, Avatar, Button, Divider, Badge } from '../../components/common';
@@ -7,15 +7,14 @@ import { Text, Avatar, Button, Divider, Badge } from '../../components/common';
 const CreatorDetailScreen = ({ navigation, route }) => {
   const creatorId = route?.params?.id;
   
-  // TODO: Fetch creator details from API
-  const creator = {
-    name: 'Creator Name',
-    email: 'creator@example.com',
-    status: 'approved',
+  const [creator, setCreator] = useState({
+    name: route?.params?.name || 'Creator Name',
+    email: route?.params?.email || 'creator@example.com',
+    status: route?.params?.status || 'pending',
     subscribers: 0,
     earnings: 0,
     content: 0,
-  };
+  });
 
   return (
     <ScreenContainer>
@@ -64,7 +63,13 @@ const CreatorDetailScreen = ({ navigation, route }) => {
                 'Are you sure you want to approve this creator?',
                 [
                   { text: 'Cancel', style: 'cancel' },
-                  { text: 'Approve', onPress: () => Alert.alert('Success', 'Creator approved.') },
+                  {
+                    text: 'Approve',
+                    onPress: () => {
+                      setCreator((prev) => ({ ...prev, status: 'approved' }));
+                      Alert.alert('Success', 'Creator approved.');
+                    },
+                  },
                 ]
               );
             }}
@@ -83,7 +88,13 @@ const CreatorDetailScreen = ({ navigation, route }) => {
                 { text: 'Cancel', style: 'cancel' },
                 { 
                   text: action === 'suspend' ? 'Suspend' : 'Activate', 
-                  onPress: () => Alert.alert('Success', `Creator ${action}d.`) 
+                  onPress: () => {
+                    setCreator((prev) => ({
+                      ...prev,
+                      status: action === 'suspend' ? 'suspended' : 'approved',
+                    }));
+                    Alert.alert('Success', `Creator ${action}d.`);
+                  },
                 },
               ]
             );
@@ -94,7 +105,15 @@ const CreatorDetailScreen = ({ navigation, route }) => {
           title="View Content"
           variant="secondary"
           onPress={() => {
-            Alert.alert('View Content', 'Creator content viewer will be available soon.', [{ text: 'OK' }]);
+            const nextParams = creatorId ? { creatorId } : undefined;
+            try {
+              navigation.navigate('AdminTabs', {
+                screen: 'ContentModeration',
+                params: nextParams,
+              });
+            } catch (e) {
+              Alert.alert('Navigation', 'Open Content tab to review this creator content.');
+            }
           }}
           style={styles.actionButton}
         />

@@ -33,7 +33,7 @@ const db = admin.firestore();
 // =============================================================================
 
 const LIVEPEER_CONFIG = {
-  apiKey: functions.config().livepeer?.api_key || process.env.LIVEPEER_API_KEY || '',
+  apiKey: process.env.LIVEPEER_API_KEY || '',
   apiBaseUrl: 'https://livepeer.studio/api',
   playbackBaseUrl: 'https://livepeercdn.studio/hls',
 };

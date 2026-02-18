@@ -27,6 +27,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useStream } from '../../hooks/useStream';
 import { contentService } from '../../services/content.service';
+import { getCreatorInteractionStats } from '../../services/interaction.service';
 import { Content } from '../../types/content';
 import { LoadingView } from '../../components/common';
 import { darkTheme } from '../../theme';
@@ -152,12 +153,13 @@ export default function DashboardScreen(): JSX.Element {
       const allContent = await contentService.getCreatorContent(profile.uid, { limit: 100 });
       const totalViews = allContent.items.reduce((sum, item) => sum + (item.viewCount || 0), 0);
       const totalLikes = allContent.items.reduce((sum, item) => sum + (item.likeCount || 0), 0);
+      const interactionStats = await getCreatorInteractionStats(profile.uid);
       
       setStats({
         totalUploads: allContent.items.length,
         totalViews,
         totalLikes,
-        subscribers: 0, // TODO: Fetch from subscriptions service
+        subscribers: interactionStats.subscribers,
       });
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
@@ -207,7 +209,7 @@ export default function DashboardScreen(): JSX.Element {
         </View>
         <TouchableOpacity
           style={styles.avatarWrap}
-          onPress={() => navigation.navigate('Profile')}
+          onPress={() => navigation.navigate('ProfileTab', { screen: 'ProfileMain' })}
         >
           <Text style={styles.avatarText}>
             {displayName.charAt(0).toUpperCase()}
@@ -219,7 +221,7 @@ export default function DashboardScreen(): JSX.Element {
       {isLive && currentStream && (
         <TouchableOpacity
           style={styles.liveBanner}
-          onPress={() => navigation.navigate('StreamDashboard')}
+          onPress={() => navigation.navigate('StreamTab', { screen: 'StreamDashboard' })}
         >
           <View style={styles.liveDot} />
           <Text style={styles.liveText}>LIVE NOW</Text>
@@ -236,7 +238,7 @@ export default function DashboardScreen(): JSX.Element {
       <View style={styles.quickActions}>
         <TouchableOpacity
           style={styles.actionPrimary}
-          onPress={() => navigation.navigate('Upload')}
+          onPress={() => navigation.navigate('ContentTab', { screen: 'Upload' })}
         >
           <Text style={styles.actionPrimaryIcon}>📤</Text>
           <Text style={styles.actionPrimaryText}>Upload</Text>
@@ -244,7 +246,7 @@ export default function DashboardScreen(): JSX.Element {
 
         <TouchableOpacity
           style={styles.actionSecondary}
-          onPress={() => navigation.navigate('StreamDashboard')}
+          onPress={() => navigation.navigate('StreamTab', { screen: 'StreamDashboard' })}
         >
           <Text style={styles.actionSecondaryIcon}>📡</Text>
           <Text style={styles.actionSecondaryText}>Go Live</Text>
@@ -293,7 +295,7 @@ export default function DashboardScreen(): JSX.Element {
       {/* Recent Uploads */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Recent Uploads</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('ContentManage')}>
+        <TouchableOpacity onPress={() => navigation.navigate('ContentTab', { screen: 'ContentList' })}>
           <Text style={styles.seeAllText}>See all</Text>
         </TouchableOpacity>
       </View>
@@ -315,7 +317,7 @@ export default function DashboardScreen(): JSX.Element {
             <RecentUploadItem
               key={item.id}
               item={item}
-              onPress={() => navigation.navigate('ContentManage')}
+              onPress={() => navigation.navigate('ContentTab', { screen: 'ContentList' })}
             />
           ))}
         </View>
@@ -326,7 +328,7 @@ export default function DashboardScreen(): JSX.Element {
       <View style={styles.quickLinks}>
         <TouchableOpacity
           style={styles.quickLink}
-          onPress={() => navigation.navigate('Recordings')}
+          onPress={() => navigation.navigate('StreamTab', { screen: 'RecordingsManage' })}
         >
           <Text style={styles.quickLinkIcon}>🎥</Text>
           <Text style={styles.quickLinkText}>Past Streams</Text>
@@ -344,7 +346,7 @@ export default function DashboardScreen(): JSX.Element {
         
         <TouchableOpacity
           style={styles.quickLink}
-          onPress={() => navigation.navigate('Profile')}
+          onPress={() => navigation.navigate('ProfileTab', { screen: 'ProfileMain' })}
         >
           <Text style={styles.quickLinkIcon}>⚙️</Text>
           <Text style={styles.quickLinkText}>Channel Settings</Text>

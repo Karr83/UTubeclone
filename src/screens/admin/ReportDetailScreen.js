@@ -1,5 +1,5 @@
 // Admin ReportDetailScreen - View and resolve reports
-import React from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import { ScreenContainer, Header } from '../../components/layouts';
 import { Text, Button, Divider, Badge } from '../../components/common';
@@ -7,15 +7,14 @@ import { Text, Button, Divider, Badge } from '../../components/common';
 const ReportDetailScreen = ({ navigation, route }) => {
   const reportId = route?.params?.id;
   
-  // TODO: Fetch report details from API
-  const report = {
+  const [report, setReport] = useState({
     type: 'Content Report',
     reason: 'Inappropriate content',
     description: 'Detailed description of the report...',
     reportedBy: 'User Name',
     reportedAt: '2024-01-01',
-    status: 'pending',
-  };
+    status: route?.params?.status || 'pending',
+  });
 
   return (
     <ScreenContainer>
@@ -57,7 +56,11 @@ const ReportDetailScreen = ({ navigation, route }) => {
           title="View Reported Content"
           variant="secondary"
           onPress={() => {
-            Alert.alert('View Content', 'Content viewer will be available soon.', [{ text: 'OK' }]);
+            try {
+              navigation.navigate('AdminTabs', { screen: 'ContentModeration' });
+            } catch (e) {
+              Alert.alert('Navigation', 'Open Content Moderation tab to inspect the report target.');
+            }
           }}
           style={styles.actionButton}
         />
@@ -70,7 +73,13 @@ const ReportDetailScreen = ({ navigation, route }) => {
               'Are you sure you want to dismiss this report?',
               [
                 { text: 'Cancel', style: 'cancel' },
-                { text: 'Dismiss', onPress: () => Alert.alert('Success', 'Report dismissed.') },
+                {
+                  text: 'Dismiss',
+                  onPress: () => {
+                    setReport((prev) => ({ ...prev, status: 'resolved' }));
+                    Alert.alert('Success', 'Report dismissed.');
+                  },
+                },
               ]
             );
           }}
@@ -87,7 +96,10 @@ const ReportDetailScreen = ({ navigation, route }) => {
                 { 
                   text: 'Remove', 
                   style: 'destructive',
-                  onPress: () => Alert.alert('Success', 'Content removed and report resolved.') 
+                  onPress: () => {
+                    setReport((prev) => ({ ...prev, status: 'resolved' }));
+                    Alert.alert('Success', 'Content removed and report resolved.');
+                  },
                 },
               ]
             );

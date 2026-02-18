@@ -284,7 +284,17 @@ export default function ContentManageScreen(): JSX.Element {
   };
 
   const handleEdit = (item: Content) => {
-    navigation.navigate('ContentEditor', { id: item.id });
+    Alert.alert(
+      'Edit Content',
+      'Use the upload screen to publish an updated version of this content.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Go to Upload',
+          onPress: () => navigation.navigate('Upload'),
+        },
+      ]
+    );
   };
 
   const handleDelete = (item: Content) => {

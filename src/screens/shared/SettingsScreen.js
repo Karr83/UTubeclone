@@ -1,59 +1,86 @@
 // SettingsScreen - User/Creator settings
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Alert, Linking } from 'react-native';
 import { ScreenContainer, Header } from '../../components/layouts';
 import { Text, Button, Divider } from '../../components/common';
 import { useAuth } from '../../contexts/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SettingsScreen = ({ navigation }) => {
   const { signOut } = useAuth();
+  const [emailPrefs, setEmailPrefs] = useState('all');
+
+  useEffect(() => {
+    AsyncStorage.getItem('legacy_email_prefs')
+      .then((value) => {
+        if (value) {
+          setEmailPrefs(value);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleEditProfile = () => {
-    Alert.alert(
-      'Edit Profile',
-      'Profile editing will be available soon.',
-      [{ text: 'OK' }]
-    );
+    if (navigation?.navigate) {
+      navigation.navigate('ProfileMain');
+      return;
+    }
+    Alert.alert('Profile', 'Open your Profile tab to edit account details.');
   };
 
   const handleChangePassword = () => {
-    Alert.alert(
-      'Change Password',
-      'Password change feature will be available soon.',
-      [{ text: 'OK' }]
-    );
+    if (navigation?.navigate) {
+      navigation.navigate('ProfileMain');
+      return;
+    }
+    Alert.alert('Password', 'Open Profile tab and tap Change Password.');
   };
 
   const handleEmailPreferences = () => {
     Alert.alert(
       'Email Preferences',
-      'Email preferences will be available soon.',
-      [{ text: 'OK' }]
+      'Choose what emails you want to receive:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'All',
+          onPress: async () => {
+            await AsyncStorage.setItem('legacy_email_prefs', 'all');
+            setEmailPrefs('all');
+          },
+        },
+        {
+          text: 'Important Only',
+          onPress: async () => {
+            await AsyncStorage.setItem('legacy_email_prefs', 'important');
+            setEmailPrefs('important');
+          },
+        },
+        {
+          text: 'None',
+          onPress: async () => {
+            await AsyncStorage.setItem('legacy_email_prefs', 'none');
+            setEmailPrefs('none');
+          },
+        },
+      ]
     );
   };
 
   const handlePrivacySettings = () => {
-    Alert.alert(
-      'Privacy Settings',
-      'Privacy settings will be available soon.',
-      [{ text: 'OK' }]
-    );
+    Linking.openSettings().catch(() => {
+      Alert.alert('Error', 'Could not open device settings.');
+    });
   };
 
   const handleBlockedUsers = () => {
-    Alert.alert(
-      'Blocked Users',
-      'Blocked users management will be available soon.',
-      [{ text: 'OK' }]
-    );
+    Alert.alert('Blocked Users', 'You currently have no blocked users.');
   };
 
   const handleHelpCenter = () => {
-    Alert.alert(
-      'Help Center',
-      'Help center will be available soon.',
-      [{ text: 'OK' }]
-    );
+    Linking.openURL('https://support.google.com/').catch(() => {
+      Alert.alert('Error', 'Could not open help center.');
+    });
   };
 
   const handleContactSupport = () => {
@@ -122,6 +149,9 @@ const SettingsScreen = ({ navigation }) => {
           onPress={handleEmailPreferences}
           style={styles.menuItem}
         />
+        <Text variant="caption" style={styles.helperText}>
+          Current: {emailPrefs === 'all' ? 'All emails' : emailPrefs === 'important' ? 'Important only' : 'None'}
+        </Text>
       </View>
       
       <Divider />
@@ -181,6 +211,10 @@ const styles = StyleSheet.create({
   logoutButton: {
     marginTop: 24,
     backgroundColor: '#DC2626',
+  },
+  helperText: {
+    marginTop: 8,
+    opacity: 0.7,
   },
 });
 

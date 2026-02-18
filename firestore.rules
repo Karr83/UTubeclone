@@ -171,7 +171,15 @@ service cloud.firestore {
                     && request.resource.data.creatorId == request.auth.uid;
       
       // Update: Creators can update their own streams, admins can update any
-      allow update: if isOwner(resource.data.creatorId) || isAdmin();
+      // Also allow anyone to increment viewerCount/totalViewers (for anonymous viewer tracking)
+      allow update: if isOwner(resource.data.creatorId) 
+                    || isAdmin()
+                    || (request.resource.data.viewerCount is int && 
+                        request.resource.data.totalViewers is int &&
+                        // Ensure other critical fields haven't changed
+                        request.resource.data.creatorId == resource.data.creatorId &&
+                        request.resource.data.status == resource.data.status &&
+                        request.resource.data.visibility == resource.data.visibility);
       
       // Delete: Creators can delete their own streams, admins can delete any
       allow delete: if isOwner(resource.data.creatorId) || isAdmin();
@@ -194,6 +202,17 @@ service cloud.firestore {
         
         // Only system or admins can delete viewer sessions
         allow delete: if isAdmin();
+      }
+
+      // =============================================================================
+      // STREAM REACTIONS SUBCOLLECTION
+      // =============================================================================
+      match /reactions/{userId} {
+        // Anyone can read reactions for UI state/counts
+        allow read: if true;
+
+        // Authenticated users can only write their own reaction doc
+        allow create, update, delete: if isAuthenticated() && request.auth.uid == userId;
       }
       
       // =============================================================================
@@ -233,9 +252,10 @@ service cloud.firestore {
       // =============================================================================
       
       match /mutes/{muteId} {
-        // Only moderators and admins can read mutes
+        // Moderators/admins can read all mutes, users can read their own mute state
         allow read: if isModerator(get(/databases/$(database)/documents/streams/$(streamId)).data.creatorId) 
-                    || isAdmin();
+                    || isAdmin()
+                    || (isAuthenticated() && request.auth.uid == muteId);
         
         // Only moderators and admins can create mutes
         allow create: if isAuthenticated() && 
@@ -271,7 +291,14 @@ service cloud.firestore {
       allow create: if false;
       
       // Update: Creators can update their own recordings, admins can update any
-      allow update: if isOwner(resource.data.creatorId) || isAdmin();
+      // Also allow anyone to increment viewCount (for anonymous view tracking)
+      allow update: if isOwner(resource.data.creatorId) 
+                    || isAdmin()
+                    || (request.resource.data.viewCount is int &&
+                        // Ensure other critical fields haven't changed
+                        request.resource.data.creatorId == resource.data.creatorId &&
+                        request.resource.data.status == resource.data.status &&
+                        request.resource.data.visibility == resource.data.visibility);
       
       // Delete: Creators can delete their own recordings, admins can delete any
       allow delete: if isOwner(resource.data.creatorId) || isAdmin();
@@ -293,6 +320,33 @@ service cloud.firestore {
         // Only admins can delete playback sessions
         allow delete: if isAdmin();
       }
+
+      // =============================================================================
+      // RECORDING REACTIONS SUBCOLLECTION
+      // =============================================================================
+      match /reactions/{userId} {
+        // Anyone can read reactions for UI state/counts
+        allow read: if true;
+
+        // Authenticated users can only write their own reaction doc
+        allow create, update, delete: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // =============================================================================
+      // RECORDING COMMENTS SUBCOLLECTION
+      // =============================================================================
+      match /comments/{commentId} {
+        // Public comments are readable by anyone
+        allow read: if true;
+
+        // Authenticated users can create comments for themselves
+        allow create: if isAuthenticated()
+                      && request.resource.data.userId == request.auth.uid;
+
+        // Comment owner or admin can edit/delete
+        allow update, delete: if isAuthenticated()
+                              && (resource.data.userId == request.auth.uid || isAdmin());
+      }
     }
     
     // =============================================================================
@@ -300,8 +354,8 @@ service cloud.firestore {
     // =============================================================================
     
     match /chatBans/{userId} {
-      // Only moderators and admins can read chat bans
-      allow read: if isAuthenticated() && (isCreator() || isAdmin());
+      // Moderators/admins can read all bans, users can read their own ban record
+      allow read: if isAuthenticated() && ((isCreator() || isAdmin()) || request.auth.uid == userId);
       
       // Only moderators and admins can create chat bans
       allow create: if isAuthenticated() && (isCreator() || isAdmin());
@@ -356,9 +410,8 @@ service cloud.firestore {
     // =============================================================================
     
     match /subscriptions/{subscriptionId} {
-      // Users can read their own subscriptions
-      allow read: if isAuthenticated() && 
-                  (resource.data.userId == request.auth.uid || isAdmin());
+      // Authenticated users can read subscriptions (needed for existence checks)
+      allow read: if isAuthenticated();
       
       // Users can create their own subscriptions
       allow create: if isAuthenticated() && 
@@ -371,6 +424,25 @@ service cloud.firestore {
       // Users can delete their own subscriptions, admins can delete any
       allow delete: if isAuthenticated() && 
                     (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // =============================================================================
+    // SAVED ITEMS COLLECTION
+    // =============================================================================
+
+    match /savedItems/{savedItemId} {
+      // Authenticated users can read saved items.
+      // Using only auth check avoids false permission-denied on non-existent docs
+      // during existence checks (e.g., getDoc for unsaved items).
+      allow read: if isAuthenticated();
+
+      // Users can create their own saved items
+      allow create: if isAuthenticated() &&
+                    request.resource.data.userId == request.auth.uid;
+
+      // Users can update/delete their own saved items
+      allow update, delete: if isAuthenticated() &&
+                            (resource.data.userId == request.auth.uid || isAdmin());
     }
     
     // =============================================================================

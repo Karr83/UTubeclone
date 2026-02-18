@@ -27,7 +27,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  FlatList,
+  ScrollView,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -222,7 +222,7 @@ export default function ChatContainer({
   
   // Input state
   const [inputText, setInputText] = useState('');
-  const flatListRef = useRef<FlatList>(null);
+  const messageScrollRef = useRef<ScrollView>(null);
   
   // Handle send
   const handleSend = useCallback(async () => {
@@ -233,7 +233,7 @@ export default function ChatContainer({
       setInputText('');
       // Scroll to bottom
       setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
+        messageScrollRef.current?.scrollToEnd({ animated: true });
       }, 100);
     }
   }, [inputText, sendMessage]);
@@ -250,26 +250,17 @@ export default function ChatContainer({
   
   // Handle ban
   const handleBan = useCallback((userId: string, username: string) => {
-    Alert.prompt(
-      'Ban Reason',
-      `Enter reason for banning ${username}:`,
+    Alert.alert(
+      `Ban ${username}?`,
+      'This user will be banned from chat globally.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Ban',
           style: 'destructive',
-          onPress: (reason) => {
-            if (reason?.trim()) {
-              banUser(userId, username, reason.trim());
-            } else {
-              Alert.alert('Error', 'Please provide a ban reason.');
-            }
-          },
+          onPress: () => banUser(userId, username, 'Banned by moderator'),
         },
-      ],
-      'plain-text',
-      '',
-      'default'
+      ]
     );
   }, [banUser]);
   
@@ -343,23 +334,32 @@ export default function ChatContainer({
       </View>
       
       {/* Messages List */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMessage}
+      <ScrollView
+        ref={messageScrollRef}
         style={styles.messageList}
         contentContainerStyle={styles.messageListContent}
         showsVerticalScrollIndicator={false}
         onContentSizeChange={() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
+          messageScrollRef.current?.scrollToEnd({ animated: false });
         }}
-        ListEmptyComponent={
+      >
+        {messages.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No messages yet. Say hello! 👋</Text>
           </View>
-        }
-      />
+        ) : (
+          messages.map((message) => (
+            <MessageItem
+              key={message.id}
+              message={message}
+              onDelete={handleDelete}
+              onMute={handleMute}
+              onBan={handleBan}
+              permissions={permissions}
+            />
+          ))
+        )}
+      </ScrollView>
       
       {/* Error Display */}
       {error && (

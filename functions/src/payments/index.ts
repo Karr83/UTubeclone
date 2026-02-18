@@ -55,14 +55,14 @@ const db = admin.firestore();
  * For webhook: firebase functions:config:set stripe.webhook_secret="whsec_xxx"
  */
 const stripe = new Stripe(
-  functions.config().stripe?.secret || process.env.STRIPE_SECRET_KEY || '',
+  process.env.STRIPE_SECRET_KEY || '',
   {
     apiVersion: '2023-10-16', // Use latest stable API version
     typescript: true,
   }
 );
 
-const webhookSecret = functions.config().stripe?.webhook_secret || process.env.STRIPE_WEBHOOK_SECRET || '';
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 
 // =============================================================================
 // PRICE CONFIGURATION
@@ -140,7 +140,7 @@ export const createCheckoutSession = functions.https.onCall(
     const userEmail = context.auth.token.email;
     
     // Validate input
-    const { tier, interval, successUrl, cancelUrl, couponCode } = data;
+    const { tier, interval, successUrl, cancelUrl, couponCode: _couponCode } = data;
     
     if (!tier || !interval || !successUrl || !cancelUrl) {
       throw new functions.https.HttpsError(

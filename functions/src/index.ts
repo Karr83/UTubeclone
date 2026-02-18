@@ -18,29 +18,35 @@
  * 2. For webhooks, use Stripe CLI: stripe listen --forward-to localhost:5001/PROJECT_ID/REGION/stripeWebhook
  */
 
-// Export payment functions
+// Export payment functions (callable)
 export {
   createCheckoutSession,
   createPortalSession,
   cancelSubscription,
-  stripeWebhook,
 } from './payments';
 
-// Export streaming functions
+// Export streaming functions (callable)
 export {
   createLivepeerStream,
   deleteLivepeerStream,
   getLivepeerStreamStatus,
-  livepeerWebhook,
 } from './streaming';
 
-// Export recording functions (VOD)
+// Export recording functions (callable)
 export {
   createLivepeerStreamWithRecording,
-  livepeerRecordingWebhook,
   createRecordingOnStreamEnd,
   deleteLivepeerAsset,
 } from './recording';
+
+// =============================================================================
+// WEBHOOK FUNCTIONS (require Cloud Functions Admin IAM role to deploy)
+// Uncomment once the project owner grants the role at:
+// https://console.cloud.google.com/iam-admin/iam?project=social-vibing-karr
+// =============================================================================
+// export { stripeWebhook } from './payments';
+// export { livepeerWebhook } from './streaming';
+// export { livepeerRecordingWebhook } from './recording';
 
 // FUTURE: Export other functions here
 // export { sendNotification } from './notifications';

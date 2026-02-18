@@ -163,19 +163,13 @@ export async function getMessages(
     limit(queryLimit)
   );
   
-  // Optionally filter out deleted messages
-  if (!includeDeleted) {
-    q = query(
-      messagesRef,
-      where('isDeleted', '==', false),
-      orderBy('createdAt', 'desc'),
-      limit(queryLimit)
-    );
-  }
+  // Filter deleted messages client-side to avoid composite index dependency while index is building
   
   const snapshot = await getDocs(q);
   
-  return snapshot.docs.map((doc) => docToMessage(doc.id, doc.data())).reverse();
+  const messages = snapshot.docs.map((doc) => docToMessage(doc.id, doc.data()));
+  const filtered = includeDeleted ? messages : messages.filter((msg) => !msg.isDeleted);
+  return filtered.reverse();
 }
 
 /**
@@ -195,10 +189,9 @@ export function subscribeToMessages(
   
   const messagesRef = collection(firestore, 'streams', streamId, CHAT_COLLECTIONS.messages);
   
-  // Query for non-deleted messages, ordered by time
+  // Query by createdAt only; filter deleted client-side to avoid temporary index-building errors
   const q = query(
     messagesRef,
-    where('isDeleted', '==', false),
     orderBy('createdAt', 'desc'),
     limit(queryLimit)
   );
@@ -206,6 +199,7 @@ export function subscribeToMessages(
   return onSnapshot(q, (snapshot) => {
     const messages = snapshot.docs
       .map((doc) => docToMessage(doc.id, doc.data()))
+      .filter((msg) => !msg.isDeleted)
       .reverse(); // Reverse to show oldest first
     
     callback(messages);

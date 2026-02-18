@@ -22,14 +22,30 @@ import {
   ScrollView,
   StatusBar,
   Alert,
+  Share,
+  Linking,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 
 import { useReplayViewer } from '../../hooks/useReplayViewer';
+import { useAuth } from '../../contexts/AuthContext';
 import { formatDuration } from '../../services/recording.service';
 import { CommentItem } from '../../components/comment';
 import { VideoDescription, VideoPlayer, VideoPageIconsDropdown, VideoPageMoreIcon, VideoPageSaveIcon, VideoPageShareIcon, VideoPageDislikeIcon, VideoPageLikeIcon, createVideoMenuItems } from '../../components/video';
+import {
+  addRecordingComment,
+  getUserReaction,
+  isItemSaved,
+  isSubscribedToCreator,
+  setUserReaction,
+  subscribeToRecordingComments,
+  submitInteractionReport,
+  toggleSavedItem,
+  toggleCreatorSubscription,
+} from '../../services/interaction.service';
 
 // =============================================================================
 // TYPES
@@ -45,38 +61,16 @@ type ReplayRouteParams = {
 // MOCK COMMENTS DATA (UI Only)
 // =============================================================================
 
-const MOCK_COMMENTS = [
-  {
-    id: '1',
-    username: 'James Gouse',
-    avatarUrl: undefined,
-    userRole: 'viewer' as const,
-    text: 'Wow, world is full of different skills',
-    timestamp: '8 hours ago',
-    likeCount: 3,
-    replyCount: 0,
-  },
-  {
-    id: '2',
-    username: 'Sarah Chen',
-    avatarUrl: undefined,
-    userRole: 'member' as const,
-    text: 'This is amazing content! I learned so much from this stream. Can\'t wait for the next one! 🔥',
-    timestamp: '2 days ago',
-    likeCount: 42,
-    replyCount: 5,
-  },
-  {
-    id: '3',
-    username: 'Mike_Tech',
-    avatarUrl: undefined,
-    userRole: 'viewer' as const,
-    text: 'Great explanation at 12:34 👍',
-    timestamp: '1 week ago',
-    likeCount: 15,
-    replyCount: 1,
-  },
-];
+const INITIAL_COMMENTS: Array<{
+  id: string;
+  username: string;
+  avatarUrl: string | undefined;
+  userRole: 'viewer' | 'member' | 'creator' | 'admin';
+  text: string;
+  timestamp: string | Date;
+  likeCount: number;
+  replyCount: number;
+}> = [];
 
 
 // =============================================================================
@@ -85,6 +79,7 @@ const MOCK_COMMENTS = [
 
 export default function ReplayScreen(): JSX.Element {
   const navigation = useNavigation();
+  const { user, profile } = useAuth();
   const route = useRoute<RouteProp<ReplayRouteParams, 'Replay'>>();
   const recordingId = route.params?.recordingId;
 
@@ -113,6 +108,11 @@ export default function ReplayScreen(): JSX.Element {
   const [isLiked, setIsLiked] = useState(false);
   // Disliked state
   const [isDisliked, setIsDisliked] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [comments, setComments] = useState(INITIAL_COMMENTS);
+  const [showCommentModal, setShowCommentModal] = useState(false);
+  const [newCommentText, setNewCommentText] = useState('');
+  const [commentReactions, setCommentReactions] = useState<Record<string, 'like' | 'dislike' | null>>({});
 
   // Track if view has been counted
   const viewTracked = useRef(false);
@@ -140,6 +140,208 @@ export default function ReplayScreen(): JSX.Element {
     updateProgress(seconds);
   }, [updateProgress]);
 
+  const requireAuth = (): boolean => {
+    if (!user?.uid) {
+      Alert.alert('Sign in required', 'Please sign in to use this action.');
+      return false;
+    }
+    return true;
+  };
+
+  const handleShare = useCallback(async () => {
+    if (!recording) return;
+    try {
+      await Share.share({
+        message: `Watch "${recording.title}" on VibeTube`,
+      });
+    } catch (err: any) {
+      Alert.alert('Share failed', err?.message || 'Could not open share dialog.');
+    }
+  }, [recording]);
+
+  const submitComment = useCallback(async () => {
+    if (!recording) return;
+    if (!requireAuth()) return;
+
+    if (!newCommentText.trim()) {
+      Alert.alert('Comment required', 'Please type your comment first.');
+      return;
+    }
+
+    try {
+      await addRecordingComment(
+        recording.id,
+        user!.uid,
+        profile?.displayName || profile?.email || 'User',
+        newCommentText,
+        profile?.role === 'admin'
+          ? 'admin'
+          : profile?.role === 'creator'
+            ? 'creator'
+            : 'viewer'
+      );
+      setNewCommentText('');
+      setShowCommentModal(false);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to post comment.');
+    }
+  }, [newCommentText, recording?.id, user?.uid, profile?.displayName, profile?.email, profile?.role]);
+
+  useEffect(() => {
+    if (!recording?.id) {
+      setComments([]);
+      return;
+    }
+
+    const unsubscribe = subscribeToRecordingComments(recording.id, (nextComments) => {
+      setComments(
+        nextComments.map((comment) => ({
+          id: comment.id,
+          username: comment.username,
+          avatarUrl: undefined,
+          userRole: comment.userRole,
+          text: comment.text,
+          timestamp: comment.createdAt,
+          likeCount: comment.likeCount,
+          replyCount: comment.replyCount,
+        }))
+      );
+    });
+
+    return () => unsubscribe();
+  }, [recording?.id]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadInteractions = async () => {
+      if (!recording || !user?.uid) {
+        if (isActive) {
+          setIsLiked(false);
+          setIsDisliked(false);
+          setIsSubscribed(false);
+        }
+        return;
+      }
+
+      try {
+        const [reaction, subscribed, saved] = await Promise.all([
+          getUserReaction('recordings', recording.id, user.uid),
+          isSubscribedToCreator(user.uid, recording.creatorId),
+          isItemSaved(user.uid, 'recording', recording.id),
+        ]);
+
+        if (isActive) {
+          setIsLiked(reaction === 'like');
+          setIsDisliked(reaction === 'dislike');
+          setIsSubscribed(subscribed);
+          setIsSaved(saved);
+        }
+      } catch (err) {
+        console.error('[ReplayScreen] Failed to load interactions:', err);
+      }
+    };
+
+    loadInteractions();
+    return () => {
+      isActive = false;
+    };
+  }, [recording?.id, recording?.creatorId, user?.uid]);
+
+  const handleLike = useCallback(async () => {
+    if (!recording || !requireAuth()) return;
+
+    try {
+      const reaction = await setUserReaction('recordings', recording.id, user!.uid, 'like');
+      setIsLiked(reaction === 'like');
+      setIsDisliked(false);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update reaction.');
+    }
+  }, [recording?.id, user?.uid]);
+
+  const handleDislike = useCallback(async () => {
+    if (!recording || !requireAuth()) return;
+
+    try {
+      const reaction = await setUserReaction('recordings', recording.id, user!.uid, 'dislike');
+      setIsDisliked(reaction === 'dislike');
+      setIsLiked(false);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update reaction.');
+    }
+  }, [recording?.id, user?.uid]);
+
+  const handleSubscribe = useCallback(async () => {
+    if (!recording || !requireAuth()) return;
+
+    try {
+      const subscribed = await toggleCreatorSubscription(user!.uid, recording.creatorId);
+      setIsSubscribed(subscribed);
+      Alert.alert('Subscription', subscribed ? 'Subscribed to creator.' : 'Unsubscribed from creator.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update subscription.');
+    }
+  }, [recording?.id, recording?.creatorId, user?.uid]);
+
+  const handleSave = useCallback(async () => {
+    if (!recording || !requireAuth()) return;
+
+    try {
+      const saved = await toggleSavedItem(user!.uid, 'recording', recording.id);
+      setIsSaved(saved);
+      Alert.alert('Saved', saved ? 'Video saved to your library.' : 'Video removed from saved.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update saved state.');
+    }
+  }, [recording?.id, user?.uid]);
+
+  const handleReport = useCallback(async () => {
+    if (!recording || !requireAuth()) return;
+
+    try {
+      await submitInteractionReport(user!.uid, {
+        targetType: 'recording',
+        targetId: recording.id,
+        reason: 'user_report',
+        details: `Reported from replay screen: ${recording.title}`,
+      });
+      Alert.alert('Report submitted', 'Thanks, we will review this video.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to submit report.');
+    }
+  }, [recording?.id, recording?.title, user?.uid]);
+
+  const handleCommentLike = useCallback((commentId: string) => {
+    setCommentReactions((prev) => {
+      const current = prev[commentId] || null;
+      return { ...prev, [commentId]: current === 'like' ? null : 'like' };
+    });
+
+    setComments((prev) =>
+      prev.map((comment) => {
+        if (comment.id !== commentId) return comment;
+        const existing = commentReactions[commentId] || null;
+        const nextCount = existing === 'like'
+          ? Math.max(0, comment.likeCount - 1)
+          : comment.likeCount + 1;
+        return { ...comment, likeCount: nextCount };
+      })
+    );
+  }, [commentReactions]);
+
+  const handleCommentDislike = useCallback((commentId: string) => {
+    setCommentReactions((prev) => {
+      const current = prev[commentId] || null;
+      return { ...prev, [commentId]: current === 'dislike' ? null : 'dislike' };
+    });
+  }, []);
+
+  const handleCommentReply = useCallback((commentUsername: string) => {
+    setNewCommentText(`@${commentUsername} `);
+    setShowCommentModal(true);
+  }, []);
+
   // Handle completion
   const handleComplete = useCallback(() => {
     if (recording) {
@@ -163,11 +365,22 @@ export default function ReplayScreen(): JSX.Element {
 
   // Create menu items for the dropdown
   const menuItems = createVideoMenuItems({
-    onSaveToPlaylist: () => Alert.alert('Save', 'Video saved to playlist'),
-    onDownload: () => Alert.alert('Download', 'Download started'),
-    onShare: () => Alert.alert('Share', 'Share dialog'),
-    onNotInterested: () => Alert.alert('Feedback', 'We won\'t recommend this again'),
-    onReport: () => Alert.alert('Report', 'Report submitted'),
+    onSaveToPlaylist: handleSave,
+    onDownload: async () => {
+      if (!playbackUrl) return;
+      const canOpen = await Linking.canOpenURL(playbackUrl);
+      if (!canOpen) {
+        Alert.alert('Download unavailable', 'Could not open the video URL.');
+        return;
+      }
+      await Linking.openURL(playbackUrl);
+    },
+    onShare: handleShare,
+    onNotInterested: () => {
+      Alert.alert('Feedback saved', 'We will show fewer videos like this.');
+      navigation.goBack();
+    },
+    onReport: handleReport,
   });
 
   // ---------------------------------------------------------------------------
@@ -340,7 +553,7 @@ export default function ReplayScreen(): JSX.Element {
               <View style={{ marginBottom: 4 }}>
                 <VideoPageLikeIcon
                   liked={isLiked}
-                  onPress={() => setIsLiked(!isLiked)}
+                  onPress={handleLike}
                   size={24}
                 />
               </View>
@@ -350,7 +563,7 @@ export default function ReplayScreen(): JSX.Element {
               <View style={{ marginBottom: 4 }}>
                 <VideoPageDislikeIcon
                   disliked={isDisliked}
-                  onPress={() => setIsDisliked(!isDisliked)}
+                  onPress={handleDislike}
                   size={24}
                 />
               </View>
@@ -359,9 +572,7 @@ export default function ReplayScreen(): JSX.Element {
             <View style={styles.actionBtn}>
               <View style={{ marginBottom: 4 }}>
                 <VideoPageShareIcon
-                  onPress={() => {
-                    // TODO: Implement share action
-                  }}
+                  onPress={handleShare}
                   size={24}
                 />
               </View>
@@ -371,7 +582,7 @@ export default function ReplayScreen(): JSX.Element {
               <View style={{ marginBottom: 4 }}>
                 <VideoPageSaveIcon
                   saved={isSaved}
-                  onPress={() => setIsSaved(!isSaved)}
+                  onPress={handleSave}
                   size={24}
                 />
               </View>
@@ -409,22 +620,23 @@ export default function ReplayScreen(): JSX.Element {
             navigation.navigate('CreatorProfile', { id: recording.creatorId });
           }}
           onSubscribePress={() => {
-            // TODO: Implement subscribe action
+            handleSubscribe();
           }}
+          isSubscribed={isSubscribed}
         />
 
         {/* Comments section */}
         <View style={styles.commentsSection}>
           <View style={styles.commentsHeader}>
             <Text style={styles.commentsTitle}>Comments</Text>
-            <Text style={styles.commentsCount}>{MOCK_COMMENTS.length}</Text>
+            <Text style={styles.commentsCount}>{comments.length}</Text>
             <TouchableOpacity style={styles.commentsSortButton}>
               <Text style={styles.commentsSortText}>⇅ Sort by</Text>
             </TouchableOpacity>
           </View>
           
           {/* Comment input prompt */}
-          <TouchableOpacity style={styles.commentInputPrompt}>
+          <TouchableOpacity style={styles.commentInputPrompt} onPress={() => setShowCommentModal(true)}>
             <View style={styles.commentInputAvatar}>
               <Text style={styles.commentInputAvatarText}>👤</Text>
             </View>
@@ -432,7 +644,7 @@ export default function ReplayScreen(): JSX.Element {
           </TouchableOpacity>
           
           {/* Comments list */}
-          {MOCK_COMMENTS.map((comment) => (
+          {comments.map((comment) => (
             <CommentItem
               key={comment.id}
               mode="vod"
@@ -444,9 +656,9 @@ export default function ReplayScreen(): JSX.Element {
               likeCount={comment.likeCount}
               replyCount={comment.replyCount}
               showActions={true}
-              onLike={() => {}}
-              onDislike={() => {}}
-              onReply={() => {}}
+              onLike={() => handleCommentLike(comment.id)}
+              onDislike={() => handleCommentDislike(comment.id)}
+              onReply={() => handleCommentReply(comment.username)}
             />
           ))}
           
@@ -459,6 +671,35 @@ export default function ReplayScreen(): JSX.Element {
         {/* Bottom padding */}
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={showCommentModal}
+        onRequestClose={() => setShowCommentModal(false)}
+      >
+        <View style={styles.commentModalOverlay}>
+          <View style={styles.commentModalCard}>
+            <Text style={styles.commentModalTitle}>Add a comment</Text>
+            <TextInput
+              style={styles.commentModalInput}
+              value={newCommentText}
+              onChangeText={setNewCommentText}
+              placeholder="Type your comment..."
+              placeholderTextColor="#8A8A8A"
+              multiline
+            />
+            <View style={styles.commentModalActions}>
+              <TouchableOpacity style={styles.commentModalSecondaryBtn} onPress={() => setShowCommentModal(false)}>
+                <Text style={styles.commentModalBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.commentModalPrimaryBtn} onPress={submitComment}>
+                <Text style={styles.commentModalBtnText}>Post</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -700,5 +941,57 @@ const styles = StyleSheet.create({
     color: '#3ea6ff',
     fontSize: 14,
     fontWeight: '500',
+  },
+  commentModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  commentModalCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 16,
+  },
+  commentModalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  commentModalInput: {
+    backgroundColor: '#0f0f0f',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 8,
+    color: '#fff',
+    minHeight: 90,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    textAlignVertical: 'top',
+  },
+  commentModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 12,
+  },
+  commentModalPrimaryBtn: {
+    backgroundColor: '#ef4444',
+    borderRadius: 8,
+    minWidth: 84,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  commentModalSecondaryBtn: {
+    backgroundColor: '#272727',
+    borderRadius: 8,
+    minWidth: 84,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  commentModalBtnText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });

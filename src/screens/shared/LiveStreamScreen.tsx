@@ -21,13 +21,24 @@ import {
   ScrollView,
   StatusBar,
   Alert,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 
 import { useStreamViewer } from '../../hooks/useStreamViewer';
+import { useAuth } from '../../contexts/AuthContext';
 import { ChatContainer } from '../../components/chat';
 import { VideoDescription, VideoPlayer, VideoPageIconsDropdown, VideoPageMoreIcon, VideoPageSaveIcon, VideoPageShareIcon, VideoPageDislikeIcon, VideoPageLikeIcon, createVideoMenuItems } from '../../components/video';
+import {
+  getUserReaction,
+  isItemSaved,
+  isSubscribedToCreator,
+  setUserReaction,
+  submitInteractionReport,
+  toggleSavedItem,
+  toggleCreatorSubscription,
+} from '../../services/interaction.service';
 
 // =============================================================================
 // TYPES
@@ -46,6 +57,7 @@ type StreamRouteParams = {
 
 export default function LiveStreamScreen(): JSX.Element {
   const navigation = useNavigation();
+  const { user } = useAuth();
   const route = useRoute<RouteProp<StreamRouteParams, 'LiveStream'>>();
   const streamId = route.params?.streamId;
 
@@ -70,6 +82,26 @@ export default function LiveStreamScreen(): JSX.Element {
   const [isLiked, setIsLiked] = useState(false);
   // Disliked state
   const [isDisliked, setIsDisliked] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+
+  const handleShare = async (): Promise<void> => {
+    if (!stream) return;
+    try {
+      await Share.share({
+        message: `Watch "${stream.title}" live on VibeTube`,
+      });
+    } catch (err: any) {
+      Alert.alert('Share failed', err?.message || 'Could not open share dialog.');
+    }
+  };
+
+  const requireAuth = (): boolean => {
+    if (!user?.uid) {
+      Alert.alert('Sign in required', 'Please sign in to use this action.');
+      return false;
+    }
+    return true;
+  };
 
   // Join stream on mount
   useEffect(() => {
@@ -81,12 +113,114 @@ export default function LiveStreamScreen(): JSX.Element {
     };
   }, [streamId]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const loadInteractions = async () => {
+      if (!stream || !user?.uid) {
+        if (isActive) {
+          setIsLiked(false);
+          setIsDisliked(false);
+          setIsSubscribed(false);
+        }
+        return;
+      }
+
+      try {
+        const [reaction, subscribed, saved] = await Promise.all([
+          getUserReaction('streams', stream.id, user.uid),
+          isSubscribedToCreator(user.uid, stream.creatorId),
+          isItemSaved(user.uid, 'stream', stream.id),
+        ]);
+
+        if (isActive) {
+          setIsLiked(reaction === 'like');
+          setIsDisliked(reaction === 'dislike');
+          setIsSubscribed(subscribed);
+          setIsSaved(saved);
+        }
+      } catch (err) {
+        console.error('[LiveStreamScreen] Failed to load interactions:', err);
+      }
+    };
+
+    loadInteractions();
+    return () => {
+      isActive = false;
+    };
+  }, [stream?.id, stream?.creatorId, user?.uid]);
+
+  const handleLike = async (): Promise<void> => {
+    if (!stream || !requireAuth()) return;
+
+    try {
+      const reaction = await setUserReaction('streams', stream.id, user!.uid, 'like');
+      setIsLiked(reaction === 'like');
+      setIsDisliked(false);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update reaction.');
+    }
+  };
+
+  const handleDislike = async (): Promise<void> => {
+    if (!stream || !requireAuth()) return;
+
+    try {
+      const reaction = await setUserReaction('streams', stream.id, user!.uid, 'dislike');
+      setIsDisliked(reaction === 'dislike');
+      setIsLiked(false);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update reaction.');
+    }
+  };
+
+  const handleSubscribe = async (): Promise<void> => {
+    if (!stream || !requireAuth()) return;
+
+    try {
+      const subscribed = await toggleCreatorSubscription(user!.uid, stream.creatorId);
+      setIsSubscribed(subscribed);
+      Alert.alert('Subscription', subscribed ? 'Subscribed to creator.' : 'Unsubscribed from creator.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update subscription.');
+    }
+  };
+
+  const handleSave = async (): Promise<void> => {
+    if (!stream || !requireAuth()) return;
+    try {
+      const saved = await toggleSavedItem(user!.uid, 'stream', stream.id);
+      setIsSaved(saved);
+      Alert.alert('Saved', saved ? 'Stream saved to your library.' : 'Stream removed from saved.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update saved state.');
+    }
+  };
+
+  const handleReport = async (): Promise<void> => {
+    if (!stream || !requireAuth()) return;
+    try {
+      await submitInteractionReport(user!.uid, {
+        targetType: 'stream',
+        targetId: stream.id,
+        reason: 'user_report',
+        details: `Reported from live screen: ${stream.title}`,
+      });
+      Alert.alert('Report submitted', 'Thanks, we will review this stream.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to submit report.');
+    }
+  };
+
   // Create menu items for the dropdown
   const menuItems = createVideoMenuItems({
-    onSaveToPlaylist: () => Alert.alert('Save', 'Stream saved to playlist'),
-    onShare: () => Alert.alert('Share', 'Share dialog'),
-    onNotInterested: () => Alert.alert('Feedback', 'We won\'t recommend this again'),
-    onReport: () => Alert.alert('Report', 'Report submitted'),
+    onSaveToPlaylist: handleSave,
+    onShare: handleShare,
+    onNotInterested: () => {
+      Alert.alert('Feedback saved', 'We will show fewer streams like this.');
+      navigation.goBack();
+    },
+    onReport: handleReport,
   });
 
   // ---------------------------------------------------------------------------
@@ -232,7 +366,7 @@ export default function LiveStreamScreen(): JSX.Element {
               <View style={{ marginBottom: 4 }}>
                 <VideoPageLikeIcon
                   liked={isLiked}
-                  onPress={() => setIsLiked(!isLiked)}
+                  onPress={handleLike}
                   size={24}
                 />
               </View>
@@ -242,7 +376,7 @@ export default function LiveStreamScreen(): JSX.Element {
               <View style={{ marginBottom: 4 }}>
                 <VideoPageDislikeIcon
                   disliked={isDisliked}
-                  onPress={() => setIsDisliked(!isDisliked)}
+                  onPress={handleDislike}
                   size={24}
                 />
               </View>
@@ -251,9 +385,7 @@ export default function LiveStreamScreen(): JSX.Element {
             <View style={styles.actionBtn}>
               <View style={{ marginBottom: 4 }}>
                 <VideoPageShareIcon
-                  onPress={() => {
-                    // TODO: Implement share action
-                  }}
+                  onPress={handleShare}
                   size={24}
                 />
               </View>
@@ -263,7 +395,7 @@ export default function LiveStreamScreen(): JSX.Element {
               <View style={{ marginBottom: 4 }}>
                 <VideoPageSaveIcon
                   saved={isSaved}
-                  onPress={() => setIsSaved(!isSaved)}
+                  onPress={handleSave}
                   size={24}
                 />
               </View>
@@ -291,8 +423,9 @@ export default function LiveStreamScreen(): JSX.Element {
               navigation.navigate('CreatorProfile', { id: stream.creatorId });
             }}
             onSubscribePress={() => {
-              // TODO: Implement subscribe action
+              handleSubscribe();
             }}
+            isSubscribed={isSubscribed}
           />
         </View>
 

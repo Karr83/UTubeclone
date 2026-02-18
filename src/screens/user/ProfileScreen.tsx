@@ -22,14 +22,21 @@ import {
   ScrollView,
   StatusBar,
   Linking,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { updatePassword, updateProfile, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { doc, updateDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { useMembership } from '../../contexts/MembershipContext';
 import { TierBadge, FeatureGate } from '../../components/gates';
 import { UserAvatar } from '../../components/user';
+import { auth, firestore } from '../../config/firebase';
 
 // =============================================================================
 // COMPONENT
@@ -42,6 +49,26 @@ export default function ProfileScreen(): JSX.Element {
   
   // Local state for dark mode toggle
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [displayNameInput, setDisplayNameInput] = useState(profile?.displayName || '');
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+
+  React.useEffect(() => {
+    AsyncStorage.getItem('app_dark_mode')
+      .then((value) => {
+        if (value !== null) {
+          setIsDarkMode(value === 'true');
+        }
+      })
+      .catch(() => {
+        // ignore persisted setting errors
+      });
+  }, []);
 
   /**
    * Handle sign out with confirmation.
@@ -63,8 +90,17 @@ export default function ProfileScreen(): JSX.Element {
   const handleNotifications = (): void => {
     Alert.alert(
       'Notifications',
-      'Notification settings will be available soon.',
-      [{ text: 'OK' }]
+      'Push notifications are enabled. You can manage notification preferences in your device settings.',
+      [
+        { text: 'OK' },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            // On iOS, this opens app settings
+            Linking.openSettings();
+          },
+        },
+      ]
     );
   };
 
@@ -74,8 +110,24 @@ export default function ProfileScreen(): JSX.Element {
   const handlePrivacy = (): void => {
     Alert.alert(
       'Privacy Settings',
-      'Privacy settings will be available soon.',
-      [{ text: 'OK' }]
+      'Choose a privacy option:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'View Privacy Policy',
+          onPress: () => handlePrivacyPolicy(),
+        },
+        {
+          text: 'Manage Data',
+          onPress: () => {
+            Alert.alert(
+              'Data Management',
+              'Your data is stored securely in Firebase. To delete your account or export your data, please contact support.',
+              [{ text: 'OK' }]
+            );
+          },
+        },
+      ]
     );
   };
 
@@ -85,9 +137,10 @@ export default function ProfileScreen(): JSX.Element {
   const handleDarkMode = (): void => {
     const newMode = !isDarkMode;
     setIsDarkMode(newMode);
+    AsyncStorage.setItem('app_dark_mode', String(newMode)).catch(() => {});
     Alert.alert(
       'Theme Changed',
-      `Dark mode is now ${newMode ? 'On' : 'Off'}. Full theme switching will be available in a future update.`,
+      `Dark mode preference saved: ${newMode ? 'On' : 'Off'}.`,
       [{ text: 'OK' }]
     );
   };
@@ -98,8 +151,31 @@ export default function ProfileScreen(): JSX.Element {
   const handleLanguage = (): void => {
     Alert.alert(
       'Language Settings',
-      'Language selection will be available soon.',
-      [{ text: 'OK' }]
+      'Select your preferred language:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'English',
+          onPress: async () => {
+            await AsyncStorage.setItem('app_language', 'en');
+            Alert.alert('Success', 'Language set to English.');
+          },
+        },
+        {
+          text: 'Spanish',
+          onPress: async () => {
+            await AsyncStorage.setItem('app_language', 'es');
+            Alert.alert('Success', 'Idioma establecido en español.');
+          },
+        },
+        {
+          text: 'French',
+          onPress: async () => {
+            await AsyncStorage.setItem('app_language', 'fr');
+            Alert.alert('Success', 'Langue définie sur le français.');
+          },
+        },
+      ]
     );
   };
 
@@ -132,10 +208,11 @@ export default function ProfileScreen(): JSX.Element {
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'View',
+          text: 'View Online',
           onPress: () => {
-            // TODO: Navigate to terms screen or open URL
-            Alert.alert('Coming Soon', 'Terms of Service page will be available soon.');
+            Linking.openURL('https://www.termsfeed.com/live/terms-of-service').catch(() => {
+              Alert.alert('Error', 'Could not open Terms of Service. Please check your internet connection.');
+            });
           },
         },
       ]
@@ -152,10 +229,11 @@ export default function ProfileScreen(): JSX.Element {
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'View',
+          text: 'View Online',
           onPress: () => {
-            // TODO: Navigate to privacy policy screen or open URL
-            Alert.alert('Coming Soon', 'Privacy Policy page will be available soon.');
+            Linking.openURL('https://www.termsfeed.com/live/privacy-policy').catch(() => {
+              Alert.alert('Error', 'Could not open Privacy Policy. Please check your internet connection.');
+            });
           },
         },
       ]
@@ -166,22 +244,95 @@ export default function ProfileScreen(): JSX.Element {
    * Handle edit profile.
    */
   const handleEditProfile = (): void => {
-    Alert.alert(
-      'Edit Profile',
-      'Profile editing will be available soon.',
-      [{ text: 'OK' }]
-    );
+    setDisplayNameInput(profile?.displayName || '');
+    setShowEditProfileModal(true);
+  };
+
+  const submitEditProfile = async (): Promise<void> => {
+    if (!displayNameInput.trim()) {
+      Alert.alert('Error', 'Display name cannot be empty.');
+      return;
+    }
+    if (!auth?.currentUser || !firestore) {
+      Alert.alert('Error', 'Firebase not initialized.');
+      return;
+    }
+
+    try {
+      setIsSavingProfile(true);
+      await updateProfile(auth.currentUser, {
+        displayName: displayNameInput.trim(),
+      });
+
+      if (profile?.uid) {
+        await updateDoc(doc(firestore, 'users', profile.uid), {
+          displayName: displayNameInput.trim(),
+          updatedAt: new Date(),
+        });
+      }
+
+      setShowEditProfileModal(false);
+      Alert.alert('Success', 'Profile updated successfully!');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update profile.');
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   /**
    * Handle change password.
    */
   const handleChangePassword = (): void => {
-    Alert.alert(
-      'Change Password',
-      'Password change feature will be available soon.',
-      [{ text: 'OK' }]
-    );
+    if (!auth?.currentUser) {
+      Alert.alert('Error', 'You must be logged in to change your password.');
+      return;
+    }
+
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setShowPasswordModal(true);
+  };
+
+  const submitChangePassword = async (): Promise<void> => {
+    if (!auth?.currentUser) {
+      Alert.alert('Error', 'You must be logged in to change your password.');
+      return;
+    }
+    if (!auth.currentUser.email) {
+      Alert.alert('Error', 'This account does not use email/password login.');
+      return;
+    }
+    if (!currentPasswordInput.trim()) {
+      Alert.alert('Error', 'Current password is required.');
+      return;
+    }
+    if (!newPasswordInput || newPasswordInput.length < 6) {
+      Alert.alert('Error', 'New password must be at least 6 characters.');
+      return;
+    }
+    if (newPasswordInput !== confirmPasswordInput) {
+      Alert.alert('Error', 'New passwords do not match.');
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+      const credential = EmailAuthProvider.credential(
+        auth.currentUser.email,
+        currentPasswordInput
+      );
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      await updatePassword(auth.currentUser, newPasswordInput);
+
+      setShowPasswordModal(false);
+      Alert.alert('Success', 'Password changed successfully!');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to change password.');
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   return (
@@ -334,6 +485,107 @@ export default function ProfileScreen(): JSX.Element {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={showEditProfileModal}
+        onRequestClose={() => setShowEditProfileModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Edit Display Name</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={displayNameInput}
+              onChangeText={setDisplayNameInput}
+              placeholder="Enter display name"
+              placeholderTextColor="#8A8A8A"
+              editable={!isSavingProfile}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnSecondary]}
+                onPress={() => setShowEditProfileModal(false)}
+                disabled={isSavingProfile}
+              >
+                <Text style={styles.modalBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnPrimary]}
+                onPress={submitEditProfile}
+                disabled={isSavingProfile}
+              >
+                {isSavingProfile ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalBtnText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={showPasswordModal}
+        onRequestClose={() => setShowPasswordModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Change Password</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={currentPasswordInput}
+              onChangeText={setCurrentPasswordInput}
+              placeholder="Current password"
+              placeholderTextColor="#8A8A8A"
+              secureTextEntry
+              editable={!isChangingPassword}
+            />
+            <TextInput
+              style={styles.modalInput}
+              value={newPasswordInput}
+              onChangeText={setNewPasswordInput}
+              placeholder="New password"
+              placeholderTextColor="#8A8A8A"
+              secureTextEntry
+              editable={!isChangingPassword}
+            />
+            <TextInput
+              style={styles.modalInput}
+              value={confirmPasswordInput}
+              onChangeText={setConfirmPasswordInput}
+              placeholder="Confirm new password"
+              placeholderTextColor="#8A8A8A"
+              secureTextEntry
+              editable={!isChangingPassword}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnSecondary]}
+                onPress={() => setShowPasswordModal(false)}
+                disabled={isChangingPassword}
+              >
+                <Text style={styles.modalBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnPrimary]}
+                onPress={submitChangePassword}
+                disabled={isChangingPassword}
+              >
+                {isChangingPassword ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalBtnText}>Update</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -634,5 +886,56 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     fontSize: 12,
     marginTop: 20,
+  },
+
+  // Modals
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 16,
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  modalInput: {
+    backgroundColor: '#0f0f0f',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 8,
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 6,
+  },
+  modalBtn: {
+    minWidth: 92,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalBtnPrimary: {
+    backgroundColor: '#ef4444',
+  },
+  modalBtnSecondary: {
+    backgroundColor: '#272727',
+  },
+  modalBtnText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });

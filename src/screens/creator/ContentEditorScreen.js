@@ -4,11 +4,13 @@ import { View, StyleSheet, Alert } from 'react-native';
 import { ScreenContainer, Header } from '../../components/layouts';
 import { Text, Button } from '../../components/common';
 import { Input, Select } from '../../components/forms';
+import * as ImagePicker from 'expo-image-picker';
 
 const ContentEditorScreen = ({ navigation, route }) => {
   const isEditing = !!route?.params?.id;
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [mediaLabel, setMediaLabel] = useState('No file selected');
 
   const handleSave = () => {
     if (!title.trim()) {
@@ -22,12 +24,20 @@ const ContentEditorScreen = ({ navigation, route }) => {
     );
   };
 
-  const handleUploadMedia = () => {
-    Alert.alert(
-      'Upload Media',
-      'Media picker will be available soon. You can upload images and videos from your device.',
-      [{ text: 'OK' }]
-    );
+  const handleUploadMedia = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        setMediaLabel(asset.fileName || asset.uri.split('/').pop() || 'Selected media');
+      }
+    } catch (error) {
+      Alert.alert('Upload Media', 'Could not open media picker.');
+    }
   };
 
   return (
@@ -67,6 +77,7 @@ const ContentEditorScreen = ({ navigation, route }) => {
         
         <View style={styles.mediaSection}>
           <Text variant="h3">Media</Text>
+          <Text variant="caption" style={styles.mediaLabel}>{mediaLabel}</Text>
           <Button
             title="Upload Media"
             variant="secondary"
@@ -88,6 +99,10 @@ const styles = StyleSheet.create({
   },
   uploadButton: {
     marginTop: 12,
+  },
+  mediaLabel: {
+    marginTop: 8,
+    opacity: 0.7,
   },
 });
 

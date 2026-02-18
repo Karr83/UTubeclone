@@ -434,7 +434,7 @@ export default function CreatorProfileScreen(): JSX.Element {
             <SmallVideoCard
               thumbnailUrl={item.thumbnailUrl || ''}
               title={item.title}
-              creatorName={creator?.displayName || creator?.email || 'Creator'}
+              creatorName={displayName}
               duration={formatDuration(item.durationSeconds)}
               views={formatCount(item.viewCount)}
               timeAgo={formatDate(item.createdAt)}

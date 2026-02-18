@@ -612,6 +612,8 @@ export const boostService = {
         collection(firestore, CONTENT_COLLECTION),
         where('isBoosted', '==', true),
         where('status', '==', 'published'),
+        // Keep feed queries aligned with public-read Firestore rules
+        where('visibility', '==', 'public'),
         orderBy('boostLevel', 'desc'),
         orderBy('boostedAt', 'desc'),
         limit(pageLimit)
@@ -699,6 +701,8 @@ export const boostService = {
       const regularConstraints: QueryConstraint[] = [
         where('status', '==', 'published'),
         where('isBoosted', '==', false),
+        // Keep feed queries aligned with public-read Firestore rules
+        where('visibility', '==', 'public'),
         orderBy('createdAt', 'desc'),
         limit(regularLimit),
       ];

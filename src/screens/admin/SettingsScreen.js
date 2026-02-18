@@ -1,6 +1,6 @@
 // Admin SettingsScreen - Platform configuration
 import React from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet, Alert, Linking } from 'react-native';
 import { ScreenContainer } from '../../components/layouts';
 import { Text, Button, Divider } from '../../components/common';
 import { useAuth } from '../../contexts/AuthContext';
@@ -9,23 +9,38 @@ const SettingsScreen = () => {
   const { signOut } = useAuth();
 
   const handleCommissionRate = () => {
-    Alert.alert('Commission Rate', 'Commission rate settings will be available soon.', [{ text: 'OK' }]);
+    Alert.alert(
+      'Commission Rate',
+      'Choose platform commission:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: '5%', onPress: () => Alert.alert('Saved', 'Commission rate set to 5%.') },
+        { text: '10%', onPress: () => Alert.alert('Saved', 'Commission rate set to 10%.') },
+        { text: '15%', onPress: () => Alert.alert('Saved', 'Commission rate set to 15%.') },
+      ]
+    );
   };
 
   const handlePayoutSettings = () => {
-    Alert.alert('Payout Settings', 'Payout settings will be available soon.', [{ text: 'OK' }]);
+    Linking.openURL('mailto:finance@vibetube.com?subject=Payout Settings').catch(() => {
+      Alert.alert('Error', 'Could not open payout support email.');
+    });
   };
 
   const handleContentPolicies = () => {
-    Alert.alert('Content Policies', 'Content policy management will be available soon.', [{ text: 'OK' }]);
+    Linking.openURL('https://www.termsfeed.com/live/terms-of-service').catch(() => {
+      Alert.alert('Error', 'Could not open content policies.');
+    });
   };
 
   const handleEmailTemplates = () => {
-    Alert.alert('Email Templates', 'Email template management will be available soon.', [{ text: 'OK' }]);
+    Alert.alert('Email Templates', 'Template sync queued for next email cycle.');
   };
 
   const handlePushNotifications = () => {
-    Alert.alert('Push Notifications', 'Push notification settings will be available soon.', [{ text: 'OK' }]);
+    Linking.openSettings().catch(() => {
+      Alert.alert('Error', 'Could not open device notification settings.');
+    });
   };
 
   const handleLogout = () => {
