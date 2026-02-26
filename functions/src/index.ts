@@ -40,13 +40,11 @@ export {
 } from './recording';
 
 // =============================================================================
-// WEBHOOK FUNCTIONS (require Cloud Functions Admin IAM role to deploy)
-// Uncomment once the project owner grants the role at:
-// https://console.cloud.google.com/iam-admin/iam?project=social-vibing-karr
+// WEBHOOK FUNCTIONS
 // =============================================================================
-// export { stripeWebhook } from './payments';
-// export { livepeerWebhook } from './streaming';
-// export { livepeerRecordingWebhook } from './recording';
+export { stripeWebhook } from './payments';
+export { livepeerWebhook } from './streaming';
+export { livepeerRecordingWebhook } from './recording';
 
 // FUTURE: Export other functions here
 // export { sendNotification } from './notifications';

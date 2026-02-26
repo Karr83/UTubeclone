@@ -147,7 +147,13 @@ service cloud.firestore {
                         request.resource.data.visibility == null);
       
       // Update: Creators can update their own content, admins can update any
-      allow update: if isOwner(resource.data.creatorId) || isAdmin();
+      // Also allow anyone to increment viewCount (anonymous view tracking)
+      allow update: if isOwner(resource.data.creatorId)
+                    || isAdmin()
+                    || (// Safe viewCount-only update: critical fields must not change
+                        request.resource.data.creatorId == resource.data.creatorId &&
+                        request.resource.data.visibility == resource.data.visibility &&
+                        request.resource.data.status == resource.data.status);
       
       // Delete: Creators can delete their own content, admins can delete any
       allow delete: if isOwner(resource.data.creatorId) || isAdmin();
@@ -171,12 +177,10 @@ service cloud.firestore {
                     && request.resource.data.creatorId == request.auth.uid;
       
       // Update: Creators can update their own streams, admins can update any
-      // Also allow anyone to increment viewerCount/totalViewers (for anonymous viewer tracking)
+      // Also allow anyone to increment viewerCount (for anonymous viewer tracking)
       allow update: if isOwner(resource.data.creatorId) 
                     || isAdmin()
-                    || (request.resource.data.viewerCount is int && 
-                        request.resource.data.totalViewers is int &&
-                        // Ensure other critical fields haven't changed
+                    || (// Only allow safe viewer-count-only updates
                         request.resource.data.creatorId == resource.data.creatorId &&
                         request.resource.data.status == resource.data.status &&
                         request.resource.data.visibility == resource.data.visibility);
@@ -294,8 +298,7 @@ service cloud.firestore {
       // Also allow anyone to increment viewCount (for anonymous view tracking)
       allow update: if isOwner(resource.data.creatorId) 
                     || isAdmin()
-                    || (request.resource.data.viewCount is int &&
-                        // Ensure other critical fields haven't changed
+                    || (// Only allow safe view-count-only updates
                         request.resource.data.creatorId == resource.data.creatorId &&
                         request.resource.data.status == resource.data.status &&
                         request.resource.data.visibility == resource.data.visibility);

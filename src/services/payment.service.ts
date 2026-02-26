@@ -61,7 +61,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { firestore, auth } from '../config/firebase';
+import { firestore, auth, app } from '../config/firebase';
 import { MembershipTier } from '../types/membership';
 import {
   UserSubscription,
@@ -80,7 +80,8 @@ import {
 // FIREBASE FUNCTIONS REFERENCE
 // =============================================================================
 
-const functions = getFunctions();
+// Pass app explicitly so functions is linked to the same Firebase instance as auth
+const functions = getFunctions(app || undefined);
 
 /**
  * Cloud Function: Create Stripe Checkout Session
@@ -136,28 +137,28 @@ export const DEFAULT_PRICING: PricingConfig = {
     
     // Basic tier
     basic: {
-      stripePriceIdMonthly: 'price_basic_monthly_REPLACE_ME',
-      stripePriceIdYearly: 'price_basic_yearly_REPLACE_ME',
-      monthlyPriceCents: 999,   // $9.99/month
-      yearlyPriceCents: 9990,   // $99.90/year (save ~17%)
+      stripePriceIdMonthly: 'price_1T4BYrEXiCqS1sU6ooGJa2o2',
+      stripePriceIdYearly: 'price_1T4BYrEXiCqS1sU69Mizw9VU',
+      monthlyPriceCents: 999,    // $9.99/month
+      yearlyPriceCents: 9999,    // $99.99/year (save ~17%)
       currency: 'usd',
     },
     
     // Pro tier
     pro: {
-      stripePriceIdMonthly: 'price_pro_monthly_REPLACE_ME',
-      stripePriceIdYearly: 'price_pro_yearly_REPLACE_ME',
-      monthlyPriceCents: 1999,  // $19.99/month
-      yearlyPriceCents: 19990,  // $199.90/year (save ~17%)
+      stripePriceIdMonthly: 'price_1T4BZYEXiCqS1sU6GuM8La4F',
+      stripePriceIdYearly: 'price_1T4Ba1EXiCqS1sU6ew5WZmh7',
+      monthlyPriceCents: 1999,   // $19.99/month
+      yearlyPriceCents: 19999,   // $199.99/year (save ~17%)
       currency: 'usd',
     },
     
     // Enterprise tier (contact sales, but can self-serve)
     enterprise: {
-      stripePriceIdMonthly: 'price_enterprise_monthly_REPLACE_ME',
-      stripePriceIdYearly: 'price_enterprise_yearly_REPLACE_ME',
-      monthlyPriceCents: 4999,  // $49.99/month
-      yearlyPriceCents: 49990,  // $499.90/year (save ~17%)
+      stripePriceIdMonthly: 'price_1T4BaQEXiCqS1sU63MR4mUA8',
+      stripePriceIdYearly: 'price_1T4BaqEXiCqS1sU6S8iVlrYw',
+      monthlyPriceCents: 4999,   // $49.99/month
+      yearlyPriceCents: 49999,   // $499.99/year (save ~17%)
       currency: 'usd',
     },
   },
@@ -241,14 +242,14 @@ export async function createCheckoutSession(
   couponCode?: string
 ): Promise<CreateCheckoutResponse> {
   // SECURITY: Ensure user is authenticated
-  const user = auth.currentUser;
+  const user = auth?.currentUser;
   if (!user) {
     return {
       success: false,
       error: 'You must be signed in to upgrade.',
     };
   }
-  
+
   // Validate tier
   if (tier === 'free') {
     return {
@@ -256,14 +257,18 @@ export async function createCheckoutSession(
       error: 'Cannot create checkout for free tier.',
     };
   }
-  
+
   try {
+    // Force-refresh the auth token so the Cloud Function always gets a valid token
+    // This prevents "unauthenticated" errors when the token is stale
+    await user.getIdToken(true);
+
     // Generate return URLs
     // In production, use deep linking to return to the app
     const baseUrl = Linking.createURL('/');
     const successUrl = `${baseUrl}payment-success?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${baseUrl}payment-cancel`;
-    
+
     // Call Cloud Function
     const result = await createCheckoutSessionFn({
       tier,
@@ -381,7 +386,7 @@ export async function openCustomerPortal(): Promise<CreatePortalResponse> {
  * Get current user's subscription from Firestore.
  */
 export async function getCurrentSubscription(): Promise<UserSubscription | null> {
-  const user = auth.currentUser;
+  const user = auth?.currentUser;
   if (!user) {
     return null;
   }
@@ -431,7 +436,7 @@ export async function getCurrentSubscription(): Promise<UserSubscription | null>
  * SECURITY: Handled by Cloud Function to prevent unauthorized cancellations.
  */
 export async function cancelSubscription(): Promise<{ success: boolean; error?: string }> {
-  const user = auth.currentUser;
+  const user = auth?.currentUser;
   if (!user) {
     return {
       success: false,

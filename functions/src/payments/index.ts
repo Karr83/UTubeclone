@@ -80,16 +80,16 @@ interface PriceMapping {
 
 const TIER_PRICES: Record<string, PriceMapping> = {
   basic: {
-    monthly: 'price_basic_monthly_REPLACE_ME',  // Replace with actual Price ID
-    yearly: 'price_basic_yearly_REPLACE_ME',
+    monthly: 'price_1T4BYrEXiCqS1sU6ooGJa2o2',
+    yearly: 'price_1T4BYrEXiCqS1sU69Mizw9VU',
   },
   pro: {
-    monthly: 'price_pro_monthly_REPLACE_ME',
-    yearly: 'price_pro_yearly_REPLACE_ME',
+    monthly: 'price_1T4BZYEXiCqS1sU6GuM8La4F',
+    yearly: 'price_1T4Ba1EXiCqS1sU6ew5WZmh7',
   },
   enterprise: {
-    monthly: 'price_enterprise_monthly_REPLACE_ME',
-    yearly: 'price_enterprise_yearly_REPLACE_ME',
+    monthly: 'price_1T4BaQEXiCqS1sU63MR4mUA8',
+    yearly: 'price_1T4BaqEXiCqS1sU6S8iVlrYw',
   },
 };
 

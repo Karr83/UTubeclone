@@ -306,7 +306,7 @@ export default function DashboardScreen(): JSX.Element {
           <Text style={styles.emptyText}>No uploads yet</Text>
           <TouchableOpacity
             style={styles.emptyButton}
-            onPress={() => navigation.navigate('Upload')}
+            onPress={() => navigation.navigate('ContentTab', { screen: 'Upload' })}
           >
             <Text style={styles.emptyButtonText}>Upload your first video</Text>
           </TouchableOpacity>

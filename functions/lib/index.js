@@ -19,7 +19,7 @@
  * 2. For webhooks, use Stripe CLI: stripe listen --forward-to localhost:5001/PROJECT_ID/REGION/stripeWebhook
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteLivepeerAsset = exports.createRecordingOnStreamEnd = exports.createLivepeerStreamWithRecording = exports.getLivepeerStreamStatus = exports.deleteLivepeerStream = exports.createLivepeerStream = exports.cancelSubscription = exports.createPortalSession = exports.createCheckoutSession = void 0;
+exports.livepeerRecordingWebhook = exports.livepeerWebhook = exports.stripeWebhook = exports.deleteLivepeerAsset = exports.createRecordingOnStreamEnd = exports.createLivepeerStreamWithRecording = exports.getLivepeerStreamStatus = exports.deleteLivepeerStream = exports.createLivepeerStream = exports.cancelSubscription = exports.createPortalSession = exports.createCheckoutSession = void 0;
 // Export payment functions (callable)
 var payments_1 = require("./payments");
 Object.defineProperty(exports, "createCheckoutSession", { enumerable: true, get: function () { return payments_1.createCheckoutSession; } });
@@ -36,13 +36,14 @@ Object.defineProperty(exports, "createLivepeerStreamWithRecording", { enumerable
 Object.defineProperty(exports, "createRecordingOnStreamEnd", { enumerable: true, get: function () { return recording_1.createRecordingOnStreamEnd; } });
 Object.defineProperty(exports, "deleteLivepeerAsset", { enumerable: true, get: function () { return recording_1.deleteLivepeerAsset; } });
 // =============================================================================
-// WEBHOOK FUNCTIONS (require Cloud Functions Admin IAM role to deploy)
-// Uncomment once the project owner grants the role at:
-// https://console.cloud.google.com/iam-admin/iam?project=social-vibing-karr
+// WEBHOOK FUNCTIONS
 // =============================================================================
-// export { stripeWebhook } from './payments';
-// export { livepeerWebhook } from './streaming';
-// export { livepeerRecordingWebhook } from './recording';
+var payments_2 = require("./payments");
+Object.defineProperty(exports, "stripeWebhook", { enumerable: true, get: function () { return payments_2.stripeWebhook; } });
+var streaming_2 = require("./streaming");
+Object.defineProperty(exports, "livepeerWebhook", { enumerable: true, get: function () { return streaming_2.livepeerWebhook; } });
+var recording_2 = require("./recording");
+Object.defineProperty(exports, "livepeerRecordingWebhook", { enumerable: true, get: function () { return recording_2.livepeerRecordingWebhook; } });
 // FUTURE: Export other functions here
 // export { sendNotification } from './notifications';
 // export { generateAnalytics } from './analytics';
